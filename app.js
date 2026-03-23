@@ -1341,8 +1341,36 @@ function renderRanking() {
   );
 }
 
+function renderRoundViewSelect() {
+  const select = el('roundViewSelect');
+  if (!select) return;
+
+  // Ordenar rodadas da mais recente para a mais antiga
+  const sorted = [...state.rounds].sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime));
+
+  // Guardar seleção atual se já existir
+  const current = select.value;
+
+  select.innerHTML = sorted.map(r => {
+    const label = `${r.title} — Cruzeiro x ${r.opponent}`;
+    return `<option value="${r.id}">${label}</option>`;
+  }).join('');
+
+  // Restaurar seleção ou usar rodada atual por defeito
+  if (current && sorted.find(r => r.id === current)) {
+    select.value = current;
+  } else {
+    const defaultRound = getCurrentRound();
+    if (defaultRound) select.value = defaultRound.id;
+  }
+}
+
 function renderRound() {
-  const round = getCurrentRound();
+  renderRoundViewSelect();
+
+  const select = el('roundViewSelect');
+  const selectedId = select?.value;
+  const round = selectedId ? state.rounds.find(r => r.id === selectedId) : getCurrentRound();
 
   if (!round) {
     el('roundSummary').innerHTML = '<p>Nenhuma rodada disponível.</p>';
@@ -1350,13 +1378,12 @@ function renderRound() {
     return;
   }
 
-  const resultText = round.resultCruzeiro !== null && round.resultOpponent !== null
-    ? `${round.resultCruzeiro}x${round.resultOpponent}`
-    : 'Ainda não lançado';
+  const hasResult = round.resultCruzeiro !== null && round.resultOpponent !== null;
+  const resultText = hasResult ? `${round.resultCruzeiro}x${round.resultOpponent}` : 'Ainda não lançado';
 
   const roundRanking = getRoundRanking(round);
 
-  // Most popular bet
+  // Aposta mais popular
   const allBets = getBetsArray().filter(b => b.roundId === round.id);
   const betCounts = {};
   allBets.forEach(b => {
@@ -1368,9 +1395,7 @@ function renderRound() {
     ? `${popularBet[0]} (${popularBet[1]} aposta${popularBet[1] > 1 ? 's' : ''})`
     : '—';
 
-  const hasResult = round.resultCruzeiro !== null && round.resultOpponent !== null;
-
-  // Winner label — only shown after result is known
+  // Winner label — só após resultado
   const winner = hasResult && roundRanking.length ? roundWinnerLabel(roundRanking) : null;
   const winnerText = !winner
     ? ''
@@ -1378,10 +1403,10 @@ function renderRound() {
       ? '<p><strong>Jogador(es) da rodada:</strong> <span class="muted">Ninguém pontuou</span></p>'
       : `<p><strong>Jogador(es) da rodada:</strong> <span class="highlight">${winner.text}</span></p>`;
 
-  // Rodada perfeita — only shown after result is known
+  // Rodada perfeita — só após resultado
   const perfectPlayers = hasResult ? roundRanking.filter(r => r.type === 'exato').map(r => r.name) : [];
   const perfectText = perfectPlayers.length
-    ? `<p>🏆 <strong>Rodada perfeita:</strong> <span class="highlight" style="color:var(--gold)">${formatNames(perfectPlayers)} acertou${perfectPlayers.length > 1 ? 'ram' : ''} o placar exacto!</span></p>`
+    ? `<p>🏆 <strong>Rodada perfeita:</strong> <span class="highlight" style="color:var(--gold)">${formatNames(perfectPlayers)} acertou${perfectPlayers.length > 1 ? 'ram' : ''} o placar exato!</span></p>`
     : '';
 
   el('roundSummary').innerHTML = `
@@ -1391,7 +1416,7 @@ function renderRound() {
     <p><strong>Competição:</strong> ${round.competition}</p>
     <p><strong>Estado:</strong> ${roundStateLabel(round)}</p>
     <p><strong>Fecho:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
-    <p><strong>Resultado real:</strong> ${hasResult ? resultText : 'A definir'}</p>
+    <p><strong>Resultado real:</strong> ${resultText}</p>
     <p><strong>Aposta mais popular:</strong> ${popularBetText}</p>
     ${winnerText}
     ${perfectText}
@@ -1402,19 +1427,17 @@ function renderRound() {
     const score = bet && hasResult
       ? scorePrediction(bet.cruzeiroGoals, bet.opponentGoals, round.resultCruzeiro, round.resultOpponent)
       : null;
-
     const noBetWithResult = !bet && hasResult;
 
     return [
       user.name,
-      bet              ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
-      noBetWithResult  ? '0'                 : (score ? String(score.points) : '—'),
-      noBetWithResult  ? badge('sem aposta') : (score ? badge(score.type)    : '—')
+      bet             ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
+      noBetWithResult ? '0'               : (score ? String(score.points) : '—'),
+      noBetWithResult ? badge('sem aposta') : (score ? badge(score.type)  : '—')
     ];
   });
 
   el('roundTableWrap').innerHTML = tableHTML(['Nome', 'Aposta', 'Pontos', 'Tipo de acerto'], rows);
-
 }
 
 // Called only when state changes (result saved, round finalized).
@@ -1841,6 +1864,7 @@ function setupEvents() {
   });
 
   el('historyPlayerSelect').addEventListener('change', renderHistory);
+  el('roundViewSelect')?.addEventListener('change', renderRound);
   el('roundSelect').addEventListener('change', (e) => populateRoundForm(e.target.value));
 
   el('roundForm').addEventListener('submit', (e) => {
