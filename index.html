@@ -345,6 +345,31 @@
                 <div class="notice" id="adminUidDisplay" style="margin-top:12px;display:grid;gap:6px;"></div>
               </article>
             </div>
+
+            <article class="panel" style="margin-top:18px;">
+              <span class="mini-label">Participantes</span>
+              <h3>Gerir participantes</h3>
+              <div class="section-grid two-col" style="margin-bottom:18px;">
+                <form id="addPlayerForm" class="form-stack compact">
+                  <label>
+                    Nome do novo participante
+                    <input id="newPlayerName" type="text" placeholder="Ex: João" required />
+                  </label>
+                  <label>
+                    Telefone (opcional, para WhatsApp)
+                    <input id="newPlayerPhone" type="tel" placeholder="Ex: +5531999999999" />
+                  </label>
+                  <label>
+                    Pontos base (histórico anterior)
+                    <input id="newPlayerPoints" type="number" min="0" value="0" />
+                  </label>
+                  <button class="btn btn-primary" type="submit">Adicionar participante</button>
+                </form>
+                <div>
+                  <div id="playersListWrap"></div>
+                </div>
+              </div>
+            </article>
           </div>
         </section>
 
