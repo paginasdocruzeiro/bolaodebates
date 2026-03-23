@@ -9,3 +9,4 @@ window.BOLAO_FIREBASE_CONFIG = {
 };
 
 window.BOLAO_FIREBASE_PATH = "bolao-cruzeiro-debates/state";
+window.BOLAO_GEMINI_KEY = "SUBSTITUA_PELA_SUA_KEY_AQUI";
