@@ -758,13 +758,13 @@ async function callGemini(prompt) {
   if (!key) throw new Error('Chave Gemini não disponível. Certifica-te que estás logado como admin.');
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.9 }
+        generationConfig: { temperature: 0.9, maxOutputTokens: 800 }
       })
     }
   );
@@ -796,16 +796,11 @@ async function aiAnalyzeRound() {
   const roundRanking = getRoundRanking(round);
   const ranking = calculateRankings();
 
-  const prompt = `És o comentarista apaixonado do Bolão Cruzeiro Debates, um grupo de amigos brasileiros que apostam nos jogos do Cruzeiro. Faz uma análise divertida, dramática e com personalidade da rodada abaixo. Usa emojis, provoca os que erraram (com bom humor), elogia os que acertaram, menciona rivalidades no ranking. Máximo 5 parágrafos.
+  const prompt = `És o comentarista do Bolão Cruzeiro Debates. Analisa esta rodada com humor, emojis e drama. Máximo 3 parágrafos curtos.
 
-Jogo: Cruzeiro x ${round.opponent} (${round.competition})
-Resultado real: ${round.resultCruzeiro}x${round.resultOpponent}
-
-Apostas e pontuação:
-${roundRanking.map(r => `- ${r.name}: apostou ${r.bet}, fez ${r.points} ponto(s) (${r.type})`).join('\n')}
-
-Top 3 do ranking geral:
-${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} com ${r.totalPoints} pts`).join('\n')}`;
+Jogo: Cruzeiro ${round.resultCruzeiro}x${round.resultOpponent} ${round.opponent} (${round.competition})
+Apostas: ${roundRanking.map(r => `${r.name} apostou ${r.bet} (${r.type}, ${r.points}pt)`).join(', ')}
+Top 3: ${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}`;
 
   try {
     const text = await callGemini(prompt);
@@ -840,13 +835,10 @@ async function aiPredictMatch() {
     return `${u.name}: apostas anteriores — ${h.slice(-5).map(x => x.betLabel).join(', ') || 'nenhuma ainda'}`;
   });
 
-  const prompt = `És o oráculo do Bolão Cruzeiro Debates. Com base no histórico de apostas de cada jogador, faz uma previsão divertida para o próximo jogo: Cruzeiro x ${round.opponent} (${round.competition}). Sugere qual será o placar mais provável segundo o grupo, quem provavelmente vai acertar e quem vai errar feio. Usa humor brasileiro, emojis e drama. Máximo 4 parágrafos.
+  const prompt = `Oráculo do Bolão Cruzeiro Debates: prevê o jogo Cruzeiro x ${round.opponent} (${round.competition}) com humor e emojis. Máximo 3 parágrafos curtos.
 
-Histórico de apostas recentes:
-${allHistory.join('\n')}
-
-Ranking atual:
-${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} — ${r.totalPoints} pts`).join('\n')}`;
+Apostas recentes: ${allHistory.slice(0, 6).join(' | ')}
+Ranking: ${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}`;
 
   try {
     const text = await callGemini(prompt);
@@ -873,13 +865,11 @@ async function aiGenerateWhatsApp() {
   const ranking = calculateRankings();
   const roundRanking = getRoundRanking(round);
 
-  const prompt = `Cria uma mensagem criativa, engraçada e animada para enviar no grupo de WhatsApp do Bolão Cruzeiro Debates. Inclui o ranking atualizado, provoca os últimos colocados, elogia o líder, e anima todos para a próxima rodada. Usa emojis do Cruzeiro 💙, troféus e futebol. Máximo 15 linhas, direto ao ponto para WhatsApp.
+  const prompt = `Cria mensagem animada e curta para WhatsApp do Bolão Cruzeiro Debates. Use emojis 💙⚽🏆. Máximo 12 linhas.
 
-Ranking geral atual:
-${ranking.map(r => `${r.position}º ${r.name} — ${r.totalPoints} pts (${r.exact} exatos)`).join('\n')}
-
-${round ? `Próximo jogo: Cruzeiro x ${round.opponent} — ${round.competition}` : ''}
-${roundRanking.length ? `\nDestaque da última rodada: ${roundRanking[0]?.name} com ${roundRanking[0]?.points} ponto(s)` : ''}`;
+Ranking: ${ranking.map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}
+${round ? `Próximo: Cruzeiro x ${round.opponent} (${round.competition})` : ''}
+${roundRanking.length ? `Destaque: ${roundRanking[0]?.name} ${roundRanking[0]?.points}pt` : ''}`;
 
   try {
     const text = await callGemini(prompt);
