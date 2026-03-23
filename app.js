@@ -941,9 +941,9 @@ async function aiAnalyzeRound() {
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ A analisar...';
+  btn.innerHTML = '<span class="ai-spinner"></span> A analisar...';
   out.classList.remove('hidden');
-  out.textContent = 'A buscar dados e gerar análise...';
+  out.innerHTML = '<span class="ai-loading-text">⚽ A buscar dados e a gerar análise...</span>';
 
   const roundRanking = getRoundRanking(round);
   const ranking = calculateRankings();
@@ -992,9 +992,9 @@ async function aiPredictMatch() {
   }
 
   btn.disabled = true;
-  btn.textContent = '⏳ A prever...';
+  btn.innerHTML = '<span class="ai-spinner"></span> A prever...';
   out.classList.remove('hidden');
-  out.textContent = 'A buscar dados e gerar previsão...';
+  out.innerHTML = '<span class="ai-loading-text">🔮 A analisar histórico e gerar previsão...</span>';
 
   const ranking = calculateRankings();
   const footballCtx = await getCruzeiroContext();
@@ -1032,9 +1032,9 @@ async function aiGenerateWhatsApp() {
   const round = getCurrentRound();
 
   btn.disabled = true;
-  btn.textContent = '⏳ A criar mensagem...';
+  btn.innerHTML = '<span class="ai-spinner"></span> A criar mensagem...';
   out.classList.remove('hidden');
-  out.textContent = 'A gerar mensagem criativa...';
+  out.innerHTML = '<span class="ai-loading-text">📲 A preparar mensagem para o grupo...</span>';
 
   const ranking = calculateRankings();
   const roundRanking = getRoundRanking(round);
@@ -1502,12 +1502,190 @@ function renderHistory() {
 
 function renderStats() {
   const stats = getStatsSummary();
-  el('statsGrid').innerHTML = stats.map(item => `
-    <article class="stat-card">
-      <div class="label">${item.label}</div>
-      <div class="value">${item.value}</div>
-    </article>
-  `).join('');
+  const ranking = calculateRankings();
+
+  // Split stats: first 9 are global metrics, rest are player profiles
+  const globalStats = stats.slice(0, 9);
+  const profileStats = stats.slice(9);
+
+  // Build ranking evolution data — compare basePoints vs totalPoints
+  const evolutionData = [...ranking]
+    .sort((a, b) => b.totalPoints - a.totalPoints)
+    .map(u => ({
+      name: u.name,
+      base: u.basePoints,
+      earned: u.totalPoints - u.basePoints,
+      total: u.totalPoints
+    }));
+
+  // Build accuracy breakdown (exato / parcial / erro) per player
+  const accuracyData = ranking.map(u => ({
+    name: u.name,
+    exact: u.exact,
+    partial: u.partial,
+    zero: u.zeroRounds,
+    missed: u.missedRounds
+  }));
+
+  const wrap = el('statsGrid');
+  wrap.innerHTML = `
+    <div class="stats-section-full">
+      <div class="stats-kicker">Métricas gerais</div>
+      <div class="stats-global-grid">
+        ${globalStats.map(item => `
+          <article class="stat-card">
+            <div class="label">${item.label}</div>
+            <div class="value">${item.value}</div>
+          </article>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="stats-section-full">
+      <div class="stats-kicker">Pontuação acumulada por jogador</div>
+      <div class="stats-chart-wrap">
+        <canvas id="chartPoints" height="260"></canvas>
+      </div>
+    </div>
+
+    <div class="stats-section-full">
+      <div class="stats-kicker">Acertos por jogador (exatos · parciais · zeros · sem palpite)</div>
+      <div class="stats-chart-wrap">
+        <canvas id="chartAccuracy" height="260"></canvas>
+      </div>
+    </div>
+
+    <div class="stats-section-full">
+      <div class="stats-kicker">Perfis dos apostadores</div>
+      <div class="stats-profiles-grid">
+        ${profileStats.map(item => `
+          <article class="stat-card">
+            <div class="label">${item.label.replace('Perfil — ', '')}</div>
+            <div class="value" style="font-size:1rem">${item.value}</div>
+          </article>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
+  // Render charts after DOM is updated
+  requestAnimationFrame(() => {
+    const isDark = true;
+    const gridColor = 'rgba(169,184,212,0.1)';
+    const textColor = '#A9B8D4';
+    const font = { family: 'Inter, system-ui, sans-serif', size: 12 };
+
+    Chart.defaults.color = textColor;
+    Chart.defaults.font = font;
+
+    // ── Chart 1: Pontuação acumulada (stacked bar: base + earned) ──
+    const ctx1 = document.getElementById('chartPoints')?.getContext('2d');
+    if (ctx1) {
+      if (window._chartPoints) window._chartPoints.destroy();
+      window._chartPoints = new Chart(ctx1, {
+        type: 'bar',
+        data: {
+          labels: evolutionData.map(d => d.name),
+          datasets: [
+            {
+              label: 'Pontos base',
+              data: evolutionData.map(d => d.base),
+              backgroundColor: 'rgba(59,130,246,0.45)',
+              borderColor: 'rgba(59,130,246,0.9)',
+              borderWidth: 1,
+              borderRadius: 4,
+              borderSkipped: false
+            },
+            {
+              label: 'Pontos ganhos nas rodadas',
+              data: evolutionData.map(d => d.earned),
+              backgroundColor: 'rgba(57,217,138,0.55)',
+              borderColor: 'rgba(57,217,138,0.9)',
+              borderWidth: 1,
+              borderRadius: 4,
+              borderSkipped: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { color: textColor, font, boxWidth: 14, padding: 16 } },
+            tooltip: {
+              callbacks: {
+                footer: (items) => {
+                  const total = items.reduce((s, i) => s + i.raw, 0);
+                  return `Total: ${total} pts`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font } },
+            y: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    // ── Chart 2: Acertos por jogador (stacked horizontal) ──
+    const ctx2 = document.getElementById('chartAccuracy')?.getContext('2d');
+    if (ctx2) {
+      if (window._chartAccuracy) window._chartAccuracy.destroy();
+      window._chartAccuracy = new Chart(ctx2, {
+        type: 'bar',
+        data: {
+          labels: accuracyData.map(d => d.name),
+          datasets: [
+            {
+              label: 'Exatos (3 pts)',
+              data: accuracyData.map(d => d.exact),
+              backgroundColor: 'rgba(57,217,138,0.7)',
+              borderColor: 'rgba(57,217,138,1)',
+              borderWidth: 1,
+              borderRadius: 3
+            },
+            {
+              label: 'Parciais (1 pt)',
+              data: accuracyData.map(d => d.partial),
+              backgroundColor: 'rgba(255,215,107,0.7)',
+              borderColor: 'rgba(255,215,107,1)',
+              borderWidth: 1,
+              borderRadius: 3
+            },
+            {
+              label: 'Zeros (apostou e errou)',
+              data: accuracyData.map(d => d.zero),
+              backgroundColor: 'rgba(255,125,125,0.5)',
+              borderColor: 'rgba(255,125,125,0.9)',
+              borderWidth: 1,
+              borderRadius: 3
+            },
+            {
+              label: 'Sem palpite',
+              data: accuracyData.map(d => d.missed),
+              backgroundColor: 'rgba(107,124,163,0.4)',
+              borderColor: 'rgba(107,124,163,0.8)',
+              borderWidth: 1,
+              borderRadius: 3
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { color: textColor, font, boxWidth: 14, padding: 16 } }
+          },
+          scales: {
+            x: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font } },
+            y: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font, stepSize: 1 }, beginAtZero: true }
+          }
+        }
+      });
+    }
+  });
 }
 
 
