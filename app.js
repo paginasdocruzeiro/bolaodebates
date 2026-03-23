@@ -136,8 +136,15 @@ function normalizeState(raw) {
   const base = buildInitialState();
   if (!raw || typeof raw !== 'object') return base;
 
+  // Merge phone from SEED_USERS into users that don't have it (e.g. loaded from Firebase before phone was added)
+  const seedPhoneMap = Object.fromEntries(SEED_USERS.map(u => [u.name, u.phone]));
+  const mergedUsers = (Array.isArray(raw.users) ? raw.users : base.users).map(u => ({
+    ...u,
+    phone: u.phone || seedPhoneMap[u.name] || ''
+  }));
+
   return {
-    users: Array.isArray(raw.users) ? raw.users : base.users,
+    users: mergedUsers,
     rounds: Array.isArray(raw.rounds) ? raw.rounds : base.rounds,
     bets: Array.isArray(raw.bets) ? raw.bets : [],
     lastRoundHighlight: raw.lastRoundHighlight || base.lastRoundHighlight,
@@ -392,7 +399,7 @@ function generateMissingBetsMessage() {
     return `✅ Todos já apostaram para Cruzeiro x ${round.opponent}`;
   }
 
-  const list = missing.map(u => `${u.name} (${u.phone})`).join('\n');
+  const list = missing.map(u => u.phone ? `${u.name} (${u.phone})` : u.name).join('\n');
 
   return [
     `⚽ Apostadores em falta para Cruzeiro x ${round.opponent}`,
@@ -673,69 +680,6 @@ function getStatsSummary() {
       value: bettingProfile(getUserHistory(u.name))
     }))
   ];
-}
-
-function addPlayer({ name, phone, basePoints }) {
-  name = name.trim();
-  if (!name) { showToast('O nome não pode estar vazio.'); return false; }
-  if (state.users.find(u => u.name.toLowerCase() === name.toLowerCase())) {
-    showToast('Já existe um participante com esse nome.'); return false;
-  }
-  const newUser = {
-    id: crypto.randomUUID(),
-    name,
-    phone: phone?.trim() || '',
-    basePoints: Number(basePoints) || 0,
-    baseExact: 0,
-    basePartial: 0,
-    pin: null,
-    isAdmin: ADMIN_NAMES.includes(name)
-  };
-  state.users.push(newUser);
-  // Update ranking snapshot to include new player
-  state.initialRankingSnapshot.push({ name, points: newUser.basePoints });
-  saveState();
-  showToast(`${name} adicionado com sucesso.`);
-  return true;
-}
-
-function removePlayer(userId) {
-  const user = state.users.find(u => u.id === userId);
-  if (!user) return;
-  if (user.isAdmin) { showToast('Não é possível remover um administrador.'); return; }
-  if (!confirm(`Remover "${user.name}"? As apostas deste jogador serão mantidas no histórico.`)) return;
-  state.users = state.users.filter(u => u.id !== userId);
-  state.initialRankingSnapshot = state.initialRankingSnapshot.filter(s => s.name !== user.name);
-  saveState();
-  renderAdmin();
-  showToast(`${user.name} removido.`);
-}
-
-function renderPlayersList() {
-  const wrap = el('playersListWrap');
-  if (!wrap) return;
-  wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
-      <thead><tr>
-        <th style="padding:8px 6px;color:var(--text-2);text-align:left;">Nome</th>
-        <th style="padding:8px 6px;color:var(--text-2);text-align:left;">Pts base</th>
-        <th style="padding:8px 6px;color:var(--text-2);text-align:left;">PIN</th>
-        <th style="padding:8px 6px;"></th>
-      </tr></thead>
-      <tbody>
-        ${state.users.map(u => `
-          <tr style="border-top:1px solid var(--line);">
-            <td style="padding:8px 6px;">${u.name}${u.isAdmin ? ' <span style="color:var(--gold);font-size:.75rem;">admin</span>' : ''}</td>
-            <td style="padding:8px 6px;">${u.basePoints}</td>
-            <td style="padding:8px 6px;">${u.pin ? '✅' : '—'}</td>
-            <td style="padding:8px 6px;">
-              ${!u.isAdmin ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:.78rem;" onclick="removePlayer('${u.id}')">Remover</button>` : ''}
-            </td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  `;
 }
 
 function movementHTML(movement, delta) {
@@ -1183,8 +1127,6 @@ function renderAdmin() {
       : '<p><strong>Apostadores em falta:</strong> sem rodada aberta.</p>';
   }
 
-  renderPlayersList();
-
   // Show Firebase UID so admins can share it for registration in adminUids
   const uidWrap = el('adminUidDisplay');
   if (uidWrap) {
@@ -1518,20 +1460,6 @@ function setupEvents() {
     populateRoundForm(round.id);
     renderHome();
     showToast('Nova rodada criada.');
-  });
-
-  el('addPlayerForm')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const ok = addPlayer({
-      name: el('newPlayerName').value,
-      phone: el('newPlayerPhone').value,
-      basePoints: el('newPlayerPoints').value
-    });
-    if (ok) {
-      el('addPlayerForm').reset();
-      el('newPlayerPoints').value = '0';
-      renderAdmin();
-    }
   });
 
   el('openRoundBtn').addEventListener('click', () => quickState('open'));
