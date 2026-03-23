@@ -20,6 +20,7 @@ const views = ['home', 'login', 'dashboard', 'ranking', 'round', 'history', 'sta
 let currentRoute = 'home';
 let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
+let geminiKey = null;
 
 const SEED_USERS = [
   ['Davidson', 17, '+553196017445'],
@@ -712,6 +713,161 @@ function getStatsSummary() {
   ];
 }
 
+
+// ── IA do Bolão ──────────────────────────────────────────────
+
+async function loadGeminiKey() {
+  if (geminiKey) return geminiKey;
+  if (!firebaseDbRef) return null;
+  try {
+    const db = firebase.database();
+    const snap = await db.ref('bolao-cruzeiro-debates/state/geminiKey').once('value');
+    geminiKey = snap.val() || null;
+    return geminiKey;
+  } catch {
+    return null;
+  }
+}
+
+async function callGemini(prompt) {
+  const key = await loadGeminiKey();
+  if (!key) throw new Error('Chave Gemini não disponível. Certifica-te que estás logado como admin.');
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.9, maxOutputTokens: 600 }
+      })
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err?.error?.message || 'Erro na API Gemini.');
+  }
+
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta.';
+}
+
+async function aiAnalyzeRound() {
+  const btn = el('aiAnalyzeBtn');
+  const out = el('aiOutput');
+  const round = getCurrentRound();
+  if (!round || round.resultCruzeiro === null) {
+    out.textContent = 'Esta função só está disponível depois de lançar o resultado da rodada.';
+    out.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ A analisar...';
+  out.classList.remove('hidden');
+  out.textContent = 'A gerar análise...';
+
+  const roundRanking = getRoundRanking(round);
+  const ranking = calculateRankings();
+
+  const prompt = `És o comentarista apaixonado do Bolão Cruzeiro Debates, um grupo de amigos brasileiros que apostam nos jogos do Cruzeiro. Faz uma análise divertida, dramática e com personalidade da rodada abaixo. Usa emojis, provoca os que erraram (com bom humor), elogia os que acertaram, menciona rivalidades no ranking. Máximo 5 parágrafos.
+
+Jogo: Cruzeiro x ${round.opponent} (${round.competition})
+Resultado real: ${round.resultCruzeiro}x${round.resultOpponent}
+
+Apostas e pontuação:
+${roundRanking.map(r => `- ${r.name}: apostou ${r.bet}, fez ${r.points} ponto(s) (${r.type})`).join('\n')}
+
+Top 3 do ranking geral:
+${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} com ${r.totalPoints} pts`).join('\n')}`;
+
+  try {
+    const text = await callGemini(prompt);
+    out.textContent = text;
+  } catch (e) {
+    out.textContent = `Erro: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🏆 Analisar rodada';
+  }
+}
+
+async function aiPredictMatch() {
+  const btn = el('aiPredictBtn');
+  const out = el('aiOutput');
+  const round = getCurrentRound();
+  if (!round) {
+    out.textContent = 'Sem rodada ativa para prever.';
+    out.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = '⏳ A prever...';
+  out.classList.remove('hidden');
+  out.textContent = 'A gerar previsão...';
+
+  const ranking = calculateRankings();
+  const allHistory = ranking.map(u => {
+    const h = getUserHistory(u.name).filter(x => x.betLabel !== '-' && x.betLabel !== 'Sem palpite');
+    return `${u.name}: apostas anteriores — ${h.slice(-5).map(x => x.betLabel).join(', ') || 'nenhuma ainda'}`;
+  });
+
+  const prompt = `És o oráculo do Bolão Cruzeiro Debates. Com base no histórico de apostas de cada jogador, faz uma previsão divertida para o próximo jogo: Cruzeiro x ${round.opponent} (${round.competition}). Sugere qual será o placar mais provável segundo o grupo, quem provavelmente vai acertar e quem vai errar feio. Usa humor brasileiro, emojis e drama. Máximo 4 parágrafos.
+
+Histórico de apostas recentes:
+${allHistory.join('\n')}
+
+Ranking atual:
+${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} — ${r.totalPoints} pts`).join('\n')}`;
+
+  try {
+    const text = await callGemini(prompt);
+    out.textContent = text;
+  } catch (e) {
+    out.textContent = `Erro: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔮 Prever próximo jogo';
+  }
+}
+
+async function aiGenerateWhatsApp() {
+  const btn = el('aiWhatsBtn');
+  const out = el('aiOutput');
+  const round = getCurrentRound();
+
+  btn.disabled = true;
+  btn.textContent = '⏳ A criar mensagem...';
+  out.classList.remove('hidden');
+  out.textContent = 'A gerar mensagem criativa...';
+
+  const ranking = calculateRankings();
+  const roundRanking = getRoundRanking(round);
+
+  const prompt = `Cria uma mensagem criativa, engraçada e animada para enviar no grupo de WhatsApp do Bolão Cruzeiro Debates. Inclui o ranking atualizado, provoca os últimos colocados, elogia o líder, e anima todos para a próxima rodada. Usa emojis do Cruzeiro 💙, troféus e futebol. Máximo 15 linhas, direto ao ponto para WhatsApp.
+
+Ranking geral atual:
+${ranking.map(r => `${r.position}º ${r.name} — ${r.totalPoints} pts (${r.exact} exatos)`).join('\n')}
+
+${round ? `Próximo jogo: Cruzeiro x ${round.opponent} — ${round.competition}` : ''}
+${roundRanking.length ? `\nDestaque da última rodada: ${roundRanking[0]?.name} com ${roundRanking[0]?.points} ponto(s)` : ''}`;
+
+  try {
+    const text = await callGemini(prompt);
+    out.textContent = text;
+    // Copiar também para a textarea do WhatsApp existente
+    const waMsgEl = el('whatsMessage');
+    if (waMsgEl) waMsgEl.value = text;
+  } catch (e) {
+    out.textContent = `Erro: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📲 Mensagem WhatsApp criativa';
+  }
+}
 function movementHTML(movement, delta) {
   if (movement === 'up') return `<span class="movement up">↑ ${Math.abs(delta)}</span>`;
   if (movement === 'down') return `<span class="movement down">↓ ${Math.abs(delta)}</span>`;
@@ -1521,6 +1677,10 @@ function setupEvents() {
   });
 
   el('triggerPrintBtn').addEventListener('click', () => window.print());
+
+  el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
+  el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
+  el('aiWhatsBtn')?.addEventListener('click', aiGenerateWhatsApp);
 }
 
 async function init() {
