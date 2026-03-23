@@ -36,6 +36,7 @@
         <button data-route="history" class="menu-item">Histórico</button>
         <button data-route="stats" class="menu-item">Estatísticas</button>
         <button data-route="admin" class="menu-item hidden" id="adminNavBtn">Admin</button>
+        <button data-route="ia" class="menu-item hidden" id="iaNavBtn">✨ IA</button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -383,6 +384,45 @@
               <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.6;"></div>
             </article>
           </div>
+        </section>
+
+        <section class="view" id="view-ia">
+          <div class="section-head">
+            <div>
+              <h2>✨ IA do Bolão</h2>
+              <p class="muted">Análises, previsões e mensagens geradas pelo Gemini.</p>
+            </div>
+          </div>
+          <div class="section-grid" style="gap:18px;">
+            <article class="panel">
+              <span class="mini-label">Análise</span>
+              <h3>🏆 Análise da rodada</h3>
+              <p class="muted" style="margin-bottom:14px;">Comentário automático do resultado com drama, destaques e provocações.</p>
+              <button class="btn btn-primary" id="aiAnalyzeBtn">🏆 Analisar rodada atual</button>
+            </article>
+            <article class="panel">
+              <span class="mini-label">Previsão</span>
+              <h3>🔮 Previsão do próximo jogo</h3>
+              <p class="muted" style="margin-bottom:14px;">Com base no histórico de apostas de cada jogador, quem vai acertar?</p>
+              <button class="btn btn-secondary" id="aiPredictBtn">🔮 Gerar previsão</button>
+            </article>
+            <article class="panel">
+              <span class="mini-label">WhatsApp</span>
+              <h3>📲 Mensagem criativa</h3>
+              <p class="muted" style="margin-bottom:14px;">Mensagem animada com ranking e hype para enviar no grupo.</p>
+              <button class="btn btn-secondary" id="aiWhatsBtn">📲 Gerar mensagem</button>
+            </article>
+          </div>
+          <article class="panel" style="margin-top:18px;">
+            <span class="mini-label">Resultado</span>
+            <h3>Resposta da IA</h3>
+            <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;"></div>
+            <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clica num dos botões acima para gerar conteúdo.</div>
+            <div class="inline-actions" style="margin-top:14px;">
+              <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
+              <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
+            </div>
+          </article>
         </section>
 
         <section class="view" id="view-print">
