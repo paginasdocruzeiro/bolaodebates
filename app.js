@@ -16,7 +16,7 @@ const session = { user: null };
 let state = null;
 let countdownTimer = null;
 let printMode = 'ranking';
-const views = ['home', 'login', 'dashboard', 'ranking', 'round', 'history', 'stats', 'admin', 'print'];
+const views = ['home', 'login', 'dashboard', 'ranking', 'round', 'history', 'stats', 'admin', 'ia', 'print'];
 let currentRoute = 'home';
 let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
@@ -716,8 +716,32 @@ function getStatsSummary() {
 
 // ── IA do Bolão ──────────────────────────────────────────────
 
+function showAiActions(text, isWhatsApp = false) {
+  const copyBtn = el('aiCopyBtn');
+  const waBtn = el('aiSendWhatsBtn');
+  const emptyMsg = el('aiOutputEmpty');
+  if (emptyMsg) emptyMsg.classList.add('hidden');
+  if (copyBtn) {
+    copyBtn.classList.remove('hidden');
+    copyBtn.onclick = async () => {
+      await navigator.clipboard.writeText(text);
+      showToast('Copiado!');
+    };
+  }
+  if (waBtn) {
+    waBtn.classList.toggle('hidden', !isWhatsApp);
+    waBtn.onclick = () => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  }
+}
+
 async function loadGeminiKey() {
   if (geminiKey) return geminiKey;
+  // Primeiro tenta ler do firebase-config.js (disponível para todos)
+  if (window.BOLAO_GEMINI_KEY && window.BOLAO_GEMINI_KEY !== 'SUBSTITUA_PELA_SUA_KEY_AQUI') {
+    geminiKey = window.BOLAO_GEMINI_KEY;
+    return geminiKey;
+  }
+  // Fallback: tenta buscar do Firebase (só admins)
   if (!firebaseDbRef) return null;
   try {
     const db = firebase.database();
@@ -734,7 +758,7 @@ async function callGemini(prompt) {
   if (!key) throw new Error('Chave Gemini não disponível. Certifica-te que estás logado como admin.');
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -786,11 +810,12 @@ ${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} com ${r.totalPoints} p
   try {
     const text = await callGemini(prompt);
     out.textContent = text;
+    showAiActions(text);
   } catch (e) {
     out.textContent = `Erro: ${e.message}`;
   } finally {
     btn.disabled = false;
-    btn.textContent = '🏆 Analisar rodada';
+    btn.textContent = '🏆 Analisar rodada atual';
   }
 }
 
@@ -826,11 +851,12 @@ ${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} — ${r.totalPoints} p
   try {
     const text = await callGemini(prompt);
     out.textContent = text;
+    showAiActions(text, false);
   } catch (e) {
     out.textContent = `Erro: ${e.message}`;
   } finally {
     btn.disabled = false;
-    btn.textContent = '🔮 Prever próximo jogo';
+    btn.textContent = '🔮 Gerar previsão';
   }
 }
 
@@ -858,14 +884,14 @@ ${roundRanking.length ? `\nDestaque da última rodada: ${roundRanking[0]?.name} 
   try {
     const text = await callGemini(prompt);
     out.textContent = text;
-    // Copiar também para a textarea do WhatsApp existente
+    showAiActions(text, true);
     const waMsgEl = el('whatsMessage');
     if (waMsgEl) waMsgEl.value = text;
   } catch (e) {
     out.textContent = `Erro: ${e.message}`;
   } finally {
     btn.disabled = false;
-    btn.textContent = '📲 Mensagem WhatsApp criativa';
+    btn.textContent = '📲 Gerar mensagem';
   }
 }
 function movementHTML(movement, delta) {
@@ -968,6 +994,7 @@ function renderSidebarUser() {
   el('sidebarUserName').textContent = user ? user.name : 'Visitante';
   el('sidebarUserMeta').textContent = user ? (user.isAdmin ? 'Administrador' : 'Participante') : 'Faça login para apostar';
   el('adminNavBtn').classList.toggle('hidden', !user?.isAdmin);
+  el('iaNavBtn')?.classList.toggle('hidden', !user);
 }
 
 function renderHome() {
@@ -1283,6 +1310,15 @@ function renderStats() {
   `).join('');
 }
 
+
+function renderIA() {
+  // Apenas utilizadores logados
+  if (!currentUser()) {
+    navigate('login');
+    return;
+  }
+}
+
 function renderAdmin() {
   const guard = el('adminGuard');
   const content = el('adminContent');
@@ -1489,6 +1525,7 @@ const ROUTE_RENDERS = {
   history:   ['renderHistory'],
   stats:     ['renderStats'],
   admin:     ['renderAdmin'],
+  ia:        ['renderIA'],
   print:     ['renderCurrentPrint']  // consistent with the rest of the routing system
 };
 
@@ -1511,7 +1548,7 @@ function renderAll(route) {
   const fn_map = {
     renderHome, renderLoginOptions, updateLoginHint, renderDashboard,
     renderRanking, renderRound, renderHistory, renderStats, renderAdmin,
-    renderCurrentPrint
+    renderIA, renderCurrentPrint
   };
   (ROUTE_RENDERS[target] || []).forEach(fnName => {
     if (fn_map[fnName]) fn_map[fnName]();
@@ -1681,6 +1718,7 @@ function setupEvents() {
   el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
   el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
   el('aiWhatsBtn')?.addEventListener('click', aiGenerateWhatsApp);
+  el('iaNavBtn')?.addEventListener('click', () => navigate('ia'));
 }
 
 async function init() {
