@@ -303,11 +303,11 @@ function getFirebaseUid() {
 }
 
 function saveBetsState() {
+  // DEPRECATED — não usar. Apostas são gravadas individualmente em upsertBet().
+  // Esta função fazia .set() global que conflitua com as regras por $betId.
+  console.warn('saveBetsState() está deprecated. Use upsertBet() para gravar apostas individualmente.');
   applyAdminFlags();
   persistLocalState();
-  if (firebaseDbRef) {
-    firebaseDbRef.child('bets').set(state.bets || {});
-  }
 }
 
 function saveUsersState() {
@@ -336,7 +336,8 @@ function saveState(scope = 'all') {
   if (!firebaseDbRef) return;
 
   if (scope === 'bets') {
-    firebaseDbRef.child('bets').set(state.bets || {});
+    // SEGURO: não faz .set() global — apostas são gravadas individualmente em upsertBet()
+    // Apenas persiste localmente
     return;
   }
 
@@ -354,14 +355,10 @@ function saveState(scope = 'all') {
     return;
   }
 
-  // Full sync used only when the database is being seeded or in controlled
-  // scenarios. Avoid this path for regular user actions, because Firebase
-  // rules may block writes to admin-only nodes even when the user is only
-  // trying to place a bet.
+  // Full sync — nunca inclui bets (cada aposta é gravada individualmente em upsertBet)
   firebaseDbRef.update({
     users:                  state.users,
     rounds:                 state.rounds,
-    bets:                   state.bets,
     lastRoundHighlight:     state.lastRoundHighlight,
     initialRankingSnapshot: state.initialRankingSnapshot
   });
