@@ -302,20 +302,69 @@ function getFirebaseUid() {
   }
 }
 
-function saveState() {
+function saveBetsState() {
   applyAdminFlags();
   persistLocalState();
   if (firebaseDbRef) {
-    // Use update() instead of set() to merge with existing Firebase data,
-    // preventing accidental overwrite of nodes not present in local state.
+    firebaseDbRef.child('bets').set(state.bets || {});
+  }
+}
+
+function saveUsersState() {
+  applyAdminFlags();
+  persistLocalState();
+  if (firebaseDbRef) {
+    firebaseDbRef.child('users').set(state.users || []);
+  }
+}
+
+function saveAdminState() {
+  applyAdminFlags();
+  persistLocalState();
+  if (firebaseDbRef) {
     firebaseDbRef.update({
-      users:                  state.users,
       rounds:                 state.rounds,
-      bets:                   state.bets,
       lastRoundHighlight:     state.lastRoundHighlight,
       initialRankingSnapshot: state.initialRankingSnapshot
     });
   }
+}
+
+function saveState(scope = 'all') {
+  applyAdminFlags();
+  persistLocalState();
+  if (!firebaseDbRef) return;
+
+  if (scope === 'bets') {
+    firebaseDbRef.child('bets').set(state.bets || {});
+    return;
+  }
+
+  if (scope === 'users') {
+    firebaseDbRef.child('users').set(state.users || []);
+    return;
+  }
+
+  if (scope === 'admin') {
+    firebaseDbRef.update({
+      rounds:                 state.rounds,
+      lastRoundHighlight:     state.lastRoundHighlight,
+      initialRankingSnapshot: state.initialRankingSnapshot
+    });
+    return;
+  }
+
+  // Full sync used only when the database is being seeded or in controlled
+  // scenarios. Avoid this path for regular user actions, because Firebase
+  // rules may block writes to admin-only nodes even when the user is only
+  // trying to place a bet.
+  firebaseDbRef.update({
+    users:                  state.users,
+    rounds:                 state.rounds,
+    bets:                   state.bets,
+    lastRoundHighlight:     state.lastRoundHighlight,
+    initialRankingSnapshot: state.initialRankingSnapshot
+  });
 }
 
 function currentUser() {
@@ -508,7 +557,7 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
     showToast('Palpite registado com sucesso.');
   }
 
-  saveState();
+  saveState('bets');
 }
 
 function applyCompetitionPositions(arr, scoreField) {
@@ -1038,7 +1087,7 @@ async function loginOrRegister(name, pin) {
   if (!user.pin) {
     // First access: store hash with salt
     user.pin = newPinHash;
-    saveState();
+    saveState('users');
     showToast('PIN criado com sucesso.');
   } else {
     const storedIsHashed = isPinHashed(user.pin);
@@ -1054,7 +1103,7 @@ async function loginOrRegister(name, pin) {
     // Migrate plain text OR old hash (no salt) to new hash with userId salt
     if (!storedIsHashed || user.pin === oldPinHash) {
       user.pin = newPinHash;
-      saveState();
+      saveState('users');
     }
   }
 
@@ -1422,7 +1471,7 @@ function addPlayer({ name, phone, basePoints }) {
   };
   state.users.push(newUser);
   state.initialRankingSnapshot.push({ name, points: newUser.basePoints });
-  saveState();
+  saveState('users');
   showToast(`${name} adicionado com sucesso.`);
   return true;
 }
@@ -1434,7 +1483,7 @@ function removePlayer(userId) {
   if (!confirm(`Remover "${user.name}"? As apostas deste jogador serão mantidas no histórico.`)) return;
   state.users = state.users.filter(u => u.id !== userId);
   state.initialRankingSnapshot = state.initialRankingSnapshot.filter(s => s.name !== user.name);
-  saveState();
+  saveState('users');
   renderAdmin();
   showToast(`${user.name} removido.`);
 }
@@ -1631,7 +1680,7 @@ function quickState(stateName) {
   round.manualState = stateName;
   round.updatedAt = new Date().toISOString();
   updateRoundHighlight(round);
-  saveState();
+  saveState('admin');
   renderAll(currentRoute);
   showToast(`Rodada definida como ${roundStateLabel(round)}.`);
 }
@@ -1789,7 +1838,7 @@ function setupEvents() {
     round.updatedAt      = new Date().toISOString();
 
     updateRoundHighlight(round); // pass edited round explicitly, not getCurrentRound()
-    saveState();
+    saveState('admin');
     renderAll('admin');
     showToast('Rodada guardada.');
   });
@@ -1826,7 +1875,7 @@ function setupEvents() {
     };
 
     state.rounds.unshift(round);
-    saveState();
+    saveState('admin');
     renderAdmin();
     el('roundSelect').value = round.id;
     populateRoundForm(round.id);
@@ -1852,7 +1901,7 @@ function setupEvents() {
   el('closeRoundBtn').addEventListener('click', () => quickState('closed'));
   el('finalizeRoundBtn').addEventListener('click', () => quickState('finalized'));
   el('recalcBtn').addEventListener('click', () => {
-    saveState();
+    saveState('admin');
     renderAll(currentRoute);
     showToast('Ranking recalculado.');
   });
