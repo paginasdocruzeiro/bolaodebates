@@ -928,9 +928,14 @@ async function callGemini(prompt) {
 async function aiAnalyzeRound() {
   const btn = el('aiAnalyzeBtn');
   const out = el('aiOutput');
-  const round = getCurrentRound();
-  if (!round || round.resultCruzeiro === null) {
-    out.textContent = 'Esta função só está disponível depois de lançar o resultado da rodada.';
+
+  // Usa a última rodada com resultado lançado (finalizada ou com resultado)
+  const round = [...state.rounds]
+    .filter(r => r.resultCruzeiro !== null && r.resultOpponent !== null)
+    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
+
+  if (!round) {
+    out.textContent = 'Nenhuma rodada com resultado lançado ainda.';
     out.classList.remove('hidden');
     return;
   }
@@ -974,9 +979,14 @@ ${footballCtx?.formData ? `Forma: ${footballCtx.formData}` : ''}`;
 async function aiPredictMatch() {
   const btn = el('aiPredictBtn');
   const out = el('aiOutput');
-  const round = getCurrentRound();
+
+  // Usa apenas rodada em aberto ou em espera — nunca uma já finalizada
+  const sorted = [...state.rounds]
+    .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
+  const round = sorted.find(r => ['open', 'upcoming'].includes(effectiveRoundState(r)));
+
   if (!round) {
-    out.textContent = 'Sem rodada ativa para prever.';
+    out.textContent = 'Sem rodada aberta ou em espera para prever. Aguarda a próxima rodada ser criada.';
     out.classList.remove('hidden');
     return;
   }
@@ -990,7 +1000,8 @@ async function aiPredictMatch() {
   const footballCtx = await getCruzeiroContext();
   const allHistory = ranking.map(u => {
     const h = getUserHistory(u.name).filter(x => x.betLabel !== '-' && x.betLabel !== 'Sem palpite');
-    return `${u.name}: ${h.slice(-5).map(x => x.betLabel).join(', ') || 'sem apostas ainda'}`;
+    const resumo = h.slice(-5).map(x => `apostou ${x.betLabel} (resultado ${x.resultLabel}, ${x.pointsLabel})`).join('; ');
+    return `${u.name}: ${resumo || 'sem apostas ainda'}`;
   });
 
   const prompt = `Você é o Oráculo do Bolão Cruzeiro Debates. Faça uma previsão para Cruzeiro x ${round.opponent} (${round.competition}) usando APENAS os dados abaixo. PROIBIDO inventar estatísticas, jogadores ou informações que não constem nos dados. Base a previsão no histórico real de apostas de cada jogador. Português do Brasil, divertido, emojis, máximo 4 parágrafos.
