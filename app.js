@@ -736,12 +736,10 @@ function showAiActions(text, isWhatsApp = false) {
 
 async function loadGeminiKey() {
   if (geminiKey) return geminiKey;
-  // Primeiro tenta ler do firebase-config.js (disponível para todos)
   if (window.BOLAO_GEMINI_KEY && window.BOLAO_GEMINI_KEY !== 'SUBSTITUA_PELA_SUA_KEY_AQUI') {
     geminiKey = window.BOLAO_GEMINI_KEY;
     return geminiKey;
   }
-  // Fallback: tenta buscar do Firebase (só admins)
   if (!firebaseDbRef) return null;
   try {
     const db = firebase.database();
@@ -751,6 +749,60 @@ async function loadGeminiKey() {
   } catch {
     return null;
   }
+}
+
+// ── Football Data API ─────────────────────────────────────────
+const CRUZEIRO_ID = 1625; // ID do Cruzeiro na football-data.org
+const BRASILEIRAO_ID = 2013; // ID da Série A
+
+async function fetchFootballData(endpoint) {
+  const key = window.BOLAO_FOOTBALL_KEY;
+  if (!key || key === 'cole_o_seu_token_aqui') return null;
+  try {
+    const res = await fetch(`https://api.football-data.org/v4/${endpoint}`, {
+      headers: { 'X-Auth-Token': key }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function getCruzeiroContext() {
+  // Busca últimos 3 jogos e próximo jogo do Cruzeiro em paralelo
+  const [matches] = await Promise.all([
+    fetchFootballData(`teams/${CRUZEIRO_ID}/matches?status=FINISHED&limit=3`),
+  ]);
+
+  let recentResults = '';
+  let formData = '';
+
+  if (matches?.matches?.length) {
+    const recent = matches.matches.slice(-3).reverse();
+    recentResults = recent.map(m => {
+      const home = m.homeTeam.name;
+      const away = m.awayTeam.name;
+      const gh = m.score.fullTime.home;
+      const ga = m.score.fullTime.away;
+      const isCruzeiroHome = m.homeTeam.id === CRUZEIRO_ID;
+      const cruzeiroGoals = isCruzeiroHome ? gh : ga;
+      const opponentGoals = isCruzeiroHome ? ga : gh;
+      const opponent = isCruzeiroHome ? away : home;
+      const result = cruzeiroGoals > opponentGoals ? 'vitória' : cruzeiroGoals < opponentGoals ? 'derrota' : 'empate';
+      return `${result} ${cruzeiroGoals}x${opponentGoals} vs ${opponent} (${m.competition.name})`;
+    }).join('; ');
+
+    // Forma recente: V/E/D
+    formData = recent.map(m => {
+      const isCruzeiroHome = m.homeTeam.id === CRUZEIRO_ID;
+      const cg = isCruzeiroHome ? m.score.fullTime.home : m.score.fullTime.away;
+      const og = isCruzeiroHome ? m.score.fullTime.away : m.score.fullTime.home;
+      return cg > og ? 'V' : cg < og ? 'D' : 'E';
+    }).reverse().join('-');
+  }
+
+  return { recentResults, formData };
 }
 
 async function callGemini(prompt) {
@@ -791,16 +843,26 @@ async function aiAnalyzeRound() {
   btn.disabled = true;
   btn.textContent = '⏳ A analisar...';
   out.classList.remove('hidden');
-  out.textContent = 'A gerar análise...';
+  out.textContent = 'A buscar dados e gerar análise...';
 
   const roundRanking = getRoundRanking(round);
   const ranking = calculateRankings();
+  const footballCtx = await getCruzeiroContext();
 
-  const prompt = `És o comentarista do Bolão Cruzeiro Debates. Analisa esta rodada com humor, emojis e drama. Máximo 3 parágrafos curtos.
+  const exactos = roundRanking.filter(r => r.type === 'exato').map(r => r.name);
+  const zeros = roundRanking.filter(r => r.points === 0).map(r => r.name);
 
-Jogo: Cruzeiro ${round.resultCruzeiro}x${round.resultOpponent} ${round.opponent} (${round.competition})
-Apostas: ${roundRanking.map(r => `${r.name} apostou ${r.bet} (${r.type}, ${r.points}pt)`).join(', ')}
-Top 3: ${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}`;
+  const prompt = `Você é o narrador oficial do Bolão Cruzeiro Debates — grupo de amigos apaixonados pelo Cruzeiro. Escreva um comentário pós-jogo APENAS com os dados abaixo. PROIBIDO inventar informações, jogadores, lances ou factos que não constes nos dados fornecidos. Use os nomes reais dos apostadores, provoque quem errou, elogie quem acertou. Português do Brasil, gírias de futebol, emojis, máximo 4 parágrafos.
+
+RESULTADO DO BOLÃO:
+Jogo: Cruzeiro ${round.resultCruzeiro}x${round.resultOpponent} ${round.opponent} — ${round.competition}
+Acertou placar EXATO: ${exactos.length ? exactos.join(', ') : 'ninguém'}
+Não pontuou nada: ${zeros.length ? zeros.join(', ') : 'ninguém'}
+Apostas: ${roundRanking.map(r => `${r.name} apostou ${r.bet} → ${r.points}pt (${r.type})`).join('; ')}
+Top 3 ranking: ${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}
+${footballCtx?.recentResults ? `
+FORMA RECENTE DO CRUZEIRO (dados reais): ${footballCtx.recentResults}` : ''}
+${footballCtx?.formData ? `Forma: ${footballCtx.formData}` : ''}`;
 
   try {
     const text = await callGemini(prompt);
@@ -827,18 +889,24 @@ async function aiPredictMatch() {
   btn.disabled = true;
   btn.textContent = '⏳ A prever...';
   out.classList.remove('hidden');
-  out.textContent = 'A gerar previsão...';
+  out.textContent = 'A buscar dados e gerar previsão...';
 
   const ranking = calculateRankings();
+  const footballCtx = await getCruzeiroContext();
   const allHistory = ranking.map(u => {
     const h = getUserHistory(u.name).filter(x => x.betLabel !== '-' && x.betLabel !== 'Sem palpite');
-    return `${u.name}: apostas anteriores — ${h.slice(-5).map(x => x.betLabel).join(', ') || 'nenhuma ainda'}`;
+    return `${u.name}: ${h.slice(-5).map(x => x.betLabel).join(', ') || 'sem apostas ainda'}`;
   });
 
-  const prompt = `Oráculo do Bolão Cruzeiro Debates: prevê o jogo Cruzeiro x ${round.opponent} (${round.competition}) com humor e emojis. Máximo 3 parágrafos curtos.
+  const prompt = `Você é o Oráculo do Bolão Cruzeiro Debates. Faça uma previsão para Cruzeiro x ${round.opponent} (${round.competition}) usando APENAS os dados abaixo. PROIBIDO inventar estatísticas, jogadores ou informações que não constem nos dados. Base a previsão no histórico real de apostas de cada jogador. Português do Brasil, divertido, emojis, máximo 4 parágrafos.
 
-Apostas recentes: ${allHistory.slice(0, 6).join(' | ')}
-Ranking: ${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}`;
+PRÓXIMO JOGO: Cruzeiro x ${round.opponent} — ${round.competition}
+${footballCtx?.recentResults ? `FORMA RECENTE DO CRUZEIRO (dados reais da API): ${footballCtx.recentResults}` : 'NOTA: dados de forma do Cruzeiro indisponíveis agora.'}
+${footballCtx?.formData ? `Sequência de resultados: ${footballCtx.formData}` : ''}
+
+HISTÓRICO DE APOSTAS DOS PARTICIPANTES:
+${allHistory.join('\n')}
+RANKING: ${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(' | ')}`;
 
   try {
     const text = await callGemini(prompt);
@@ -865,11 +933,15 @@ async function aiGenerateWhatsApp() {
   const ranking = calculateRankings();
   const roundRanking = getRoundRanking(round);
 
-  const prompt = `Cria mensagem animada e curta para WhatsApp do Bolão Cruzeiro Debates. Use emojis 💙⚽🏆. Máximo 12 linhas.
+  const lider = ranking[0];
+  const lanterna = ranking[ranking.length - 1];
+  const prompt = `Crie uma mensagem para o grupo de WhatsApp do Bolão Cruzeiro Debates. Escreva em português do Brasil, estilo animado de grupo de amigos. Use os nomes reais. Provoque o último colocado pelo nome com bom humor, elogie o líder. Inclua o ranking completo formatado para WhatsApp. Use emojis 💙⚽🏆🔥. Máximo 20 linhas.
 
-Ranking: ${ranking.map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}
-${round ? `Próximo: Cruzeiro x ${round.opponent} (${round.competition})` : ''}
-${roundRanking.length ? `Destaque: ${roundRanking[0]?.name} ${roundRanking[0]?.points}pt` : ''}`;
+RANKING COMPLETO: ${ranking.map(r => `${r.position}º ${r.name} — ${r.totalPoints} pts (${r.exact} exatos)`).join(' | ')}
+LÍDER: ${lider?.name} com ${lider?.totalPoints} pontos
+LANTERNA: ${lanterna?.name} com ${lanterna?.totalPoints} pontos
+${round ? `PRÓXIMO JOGO: Cruzeiro x ${round.opponent} — ${round.competition}` : ''}
+${roundRanking.length ? `DESTAQUE DA ÚLTIMA RODADA: ${roundRanking[0]?.name} com ${roundRanking[0]?.points} ponto(s)` : ''}`;
 
   try {
     const text = await callGemini(prompt);
