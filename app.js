@@ -124,7 +124,7 @@ function buildInitialState() {
   return {
     users: SEED_USERS,
     rounds: SEED_ROUNDS,
-    bets: [],
+    bets: {},
     lastRoundHighlight: {
       text: 'Pedro Lucas, único com acerto exato, foi o destaque da última rodada.',
       player: 'Pedro Lucas'
@@ -144,10 +144,18 @@ function normalizeState(raw) {
     phone: u.phone || seedPhoneMap[u.name] || ''
   }));
 
+  const normalizedBets = Array.isArray(raw.bets)
+    ? Object.fromEntries(
+        raw.bets
+          .filter(Boolean)
+          .map(b => [b.id, b])
+      )
+    : (raw.bets && typeof raw.bets === 'object' ? raw.bets : {});
+
   return {
     users: mergedUsers,
     rounds: Array.isArray(raw.rounds) ? raw.rounds : base.rounds,
-    bets: Array.isArray(raw.bets) ? raw.bets : [],
+    bets: normalizedBets,
     lastRoundHighlight: raw.lastRoundHighlight || base.lastRoundHighlight,
     initialRankingSnapshot: Array.isArray(raw.initialRankingSnapshot)
       ? raw.initialRankingSnapshot
@@ -335,6 +343,16 @@ function getRound(roundId) {
   return state.rounds.find(r => r.id === roundId);
 }
 
+function getBetsArray() {
+  if (!state?.bets) return [];
+  return Object.values(state.bets).filter(Boolean);
+}
+
+function getBetById(betId) {
+  if (!betId || !state?.bets) return null;
+  return state.bets[betId] || null;
+}
+
 function getLatestRound() {
   return [...state.rounds].sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0] || null;
 }
@@ -365,7 +383,7 @@ function effectiveRoundState(round) {
   // Auto-upcoming: deadline is in the future but match is also far away (>48h)
   // and no bets have been placed yet — treat as upcoming so it doesn't hijack
   // the current active round in the dashboard.
-  const betsForRound = state.bets.filter(b => b.roundId === round.id).length;
+  const betsForRound = getBetsArray().filter(b => b.roundId === round.id).length;
   if (matchMs - nowMs > 48 * 3600000 && betsForRound === 0) return 'upcoming';
   return 'open';
 }
@@ -382,7 +400,7 @@ function roundStateLabel(round) {
 }
 
 function getBet(roundId, userName) {
-  return state.bets.find(b => b.roundId === roundId && b.userName === userName);
+  return getBetsArray().find(b => b.roundId === roundId && b.userName === userName) || null;
 }
 
 function getMissingBettors(round = getCurrentRound()) {
@@ -469,20 +487,24 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
   const existing = getBet(roundId, userName);
 
   if (existing) {
-    existing.cruzeiroGoals = cruzeiroGoals;
-    existing.opponentGoals = opponentGoals;
-    existing.updatedAt = nowIso;
+    state.bets[existing.id] = {
+      ...existing,
+      cruzeiroGoals,
+      opponentGoals,
+      updatedAt: nowIso
+    };
     showToast('Palpite atualizado com sucesso.');
   } else {
-    state.bets.push({
-      id: crypto.randomUUID(),
+    const id = crypto.randomUUID();
+    state.bets[id] = {
+      id,
       roundId,
       userName,
       cruzeiroGoals,
       opponentGoals,
       createdAt: nowIso,
       updatedAt: nowIso
-    });
+    };
     showToast('Palpite registado com sucesso.');
   }
 
@@ -688,7 +710,7 @@ function currentStreak(roundScores) {
 function getStatsSummary() {
   const ranking = calculateRankings();
   const roundRanking = getRoundRanking();
-  const totalBets = state.bets.length;
+  const totalBets = getBetsArray().length;
   const topExact = [...ranking].sort((a, b) => b.exact - a.exact || a.name.localeCompare(b.name))[0];
   const topPartial = [...ranking].sort((a, b) => b.partial - a.partial || a.name.localeCompare(b.name))[0];
   const bestAverage = [...ranking].sort((a, b) => b.avg - a.avg || a.name.localeCompare(b.name))[0];
@@ -1242,7 +1264,7 @@ function renderRound() {
   const roundRanking = getRoundRanking(round);
 
   // Most popular bet
-  const allBets = state.bets.filter(b => b.roundId === round.id);
+  const allBets = getBetsArray().filter(b => b.roundId === round.id);
   const betCounts = {};
   allBets.forEach(b => {
     const key = `${b.cruzeiroGoals}x${b.opponentGoals}`;
