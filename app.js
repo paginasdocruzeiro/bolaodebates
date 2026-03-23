@@ -16,7 +16,7 @@ const session = { user: null };
 let state = null;
 let countdownTimer = null;
 let printMode = 'ranking';
-const views = ['home', 'login', 'dashboard', 'ranking', 'round', 'history', 'stats', 'admin', 'ia', 'print'];
+const views = ['home', 'round', 'ranking', 'history', 'admin', 'print'];
 let currentRoute = 'home';
 let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
@@ -1148,7 +1148,7 @@ async function loginOrRegister(name, pin) {
   saveState('users');
   saveSession(user);
   el('logoutBtn').classList.remove('hidden');
-  navigate('dashboard');
+  navigate('round');
   showToast(`Bem-vindo, ${user.name}.`);
   return true;
 }
@@ -1165,67 +1165,93 @@ function renderSidebarUser() {
   el('sidebarUserName').textContent = user ? user.name : 'Visitante';
   el('sidebarUserMeta').textContent = user ? (user.isAdmin ? 'Administrador' : 'Participante') : 'Faça login para apostar';
   el('adminNavBtn').classList.toggle('hidden', !user?.isAdmin);
-  el('iaNavBtn')?.classList.toggle('hidden', !user);
 }
 
 function renderHome() {
+  const user = currentUser();
   const round = getCurrentRound();
-  el('homeNextMatch').innerHTML = round ? `
+
+  // Toggle guest vs logged-in sections
+  el('homeGuest').classList.toggle('hidden', !!user);
+  el('homeUser').classList.toggle('hidden', !user);
+
+  // ── Render next match info (both states have their own element) ──
+  const matchHTML = round ? `
     <p><strong>Cruzeiro x ${round.opponent}</strong></p>
     <p>${round.competition}</p>
     <p>${formatDateTime(round.matchTime)}</p>
     <p class="highlight">${roundStateLabel(round)}</p>
-  ` : '<p>Nenhuma rodada disponível.</p>';
+    ${effectiveRoundState(round) === 'open' ? (() => {
+      const missing = getMissingBettors(round);
+      return missing.length
+        ? `<p class="highlight">⚠️ Faltam: ${missing.map(u => u.name).join(', ')}</p>`
+        : `<p class="highlight">✅ Todos já apostaram</p>`;
+    })() : ''}
+  ` : '<p class="muted">Nenhuma rodada disponível.</p>';
 
-  if (round && effectiveRoundState(round) === 'open') {
-    const missing = getMissingBettors(round);
-    el('homeNextMatch').innerHTML += missing.length
-      ? `<p class="highlight">⚠️ Apostadores em falta: ${missing.map(u => u.name).join(', ')}</p>`
-      : `<p class="highlight">✅ Todos já apostaram nesta rodada</p>`;
+  // Guest state
+  if (!user) {
+    renderLoginOptions();
+    updateLoginHint();
+    const nm = el('homeNextMatch');
+    if (nm) nm.innerHTML = matchHTML;
+
+    const lastFinalized = [...state.rounds]
+      .filter(r => effectiveRoundState(r) === 'finalized' && r.resultCruzeiro !== null)
+      .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
+    const perfectInLast = lastFinalized
+      ? getRoundRanking(lastFinalized).filter(r => r.type === 'exato').map(r => r.name)
+      : [];
+    const lhc = el('lastHighlightCard');
+    if (lhc) lhc.innerHTML = `
+      ${perfectInLast.length ? `<p style="color:var(--gold);font-weight:700">🏆 Rodada perfeita: ${formatNames(perfectInLast)}!</p>` : ''}
+      <p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>
+    `;
+
+    const upcoming = [...state.rounds]
+      .filter(r => effectiveRoundState(r) === 'upcoming')
+      .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
+    const upcomingPanel = el('homeUpcomingPanel');
+    if (upcomingPanel) {
+      upcomingPanel.classList.toggle('hidden', !upcoming.length);
+      const upcomingWrap = el('homeUpcomingRounds');
+      if (upcomingWrap) upcomingWrap.innerHTML = upcoming.map(r => `
+        <div style="padding:8px 0;border-bottom:1px solid var(--line);">
+          <p style="margin:0"><strong>Cruzeiro x ${r.opponent}</strong></p>
+          <p style="margin:2px 0;font-size:.85rem;color:var(--text-2)">${r.competition} — ${formatDateTime(r.matchTime)}</p>
+        </div>
+      `).join('');
+    }
+    return;
   }
 
-  // Check for perfect round in the last finalized round
-  const lastFinalized = [...state.rounds]
-    .filter(r => effectiveRoundState(r) === 'finalized' && r.resultCruzeiro !== null)
-    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
-  const perfectInLast = lastFinalized
-    ? getRoundRanking(lastFinalized).filter(r => r.type === 'exato').map(r => r.name)
-    : [];
+  // Logged-in state
+  const userRanking = calculateRankings().find(x => x.name === user.name);
+  const nmLogged = el('homeNextMatchLogged');
+  if (nmLogged) nmLogged.innerHTML = matchHTML;
 
-  el('lastHighlightCard').innerHTML = `
-    ${perfectInLast.length ? `<p style="color:var(--gold);font-weight:700">🏆 Rodada perfeita: ${formatNames(perfectInLast)} acertou${perfectInLast.length > 1 ? 'ram' : ''} o placar exacto!</p>` : ''}
-    <p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>
-    <p class="muted">Destaques e ranking são atualizados automaticamente quando o resultado é lançado.</p>
-  `;
+  const lhcLogged = el('lastHighlightCardLogged');
+  if (lhcLogged) lhcLogged.innerHTML = `<p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>`;
 
-  // Upcoming panel — all rounds in upcoming state, sorted by matchTime.
-  // Exclude a round only if it is already shown as the active round in homeNextMatch
-  // AND its state is open/closed/result (not upcoming).
-  const currentRound = getCurrentRound();
-  const currentIsActive = currentRound && ['open', 'closed', 'result'].includes(effectiveRoundState(currentRound));
-  const upcoming = [...state.rounds]
-    .filter(r => {
-      const s = effectiveRoundState(r);
-      if (s !== 'upcoming') return false;            // only show upcoming rounds here
-      if (currentIsActive && r.id === currentRound.id) return false; // already shown as active
-      return true;
-    })
-    .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
-
-  const upcomingPanel = el('homeUpcomingPanel');
-  const upcomingWrap  = el('homeUpcomingRounds');
-
-  if (!upcoming.length) {
-    upcomingPanel.classList.add('hidden');
-  } else {
-    upcomingPanel.classList.remove('hidden');
-    upcomingWrap.innerHTML = upcoming.map(r => `
-      <div style="padding:8px 0;border-bottom:1px solid var(--line);">
-        <p style="margin:0"><strong>Cruzeiro x ${r.opponent}</strong></p>
-        <p style="margin:2px 0;font-size:.85rem;color:var(--text-2)">${r.competition} — ${formatDateTime(r.matchTime)}</p>
-        <p style="margin:2px 0" class="highlight" style="font-size:.82rem">${roundStateLabel(r)}</p>
+  const welcome = el('homeUserWelcome');
+  if (welcome && userRanking) {
+    const bet = round ? getBet(round.id, user.name) : null;
+    const betStatus = round && effectiveRoundState(round) === 'open'
+      ? (bet
+          ? `<p style="color:var(--green)">✅ Apostaste ${bet.cruzeiroGoals}x${bet.opponentGoals}</p>`
+          : `<p style="color:var(--yellow)">⚠️ Ainda não apostaste nesta rodada! <button class="btn btn-primary" style="padding:6px 12px;font-size:.85rem;margin-top:6px;" onclick="navigate('round')">Apostar agora</button></p>`)
+      : '';
+    welcome.innerHTML = `
+      <h2 style="margin:8px 0 4px;font-size:1.6rem;font-weight:900;letter-spacing:-0.02em">${user.name} 👋</h2>
+      <p class="muted" style="margin:0 0 12px">${user.isAdmin ? 'Administrador' : 'Participante'}</p>
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;">
+        <div><span class="mini-label">Posição</span><div style="font-size:1.4rem;font-weight:800">${userRanking.position}º</div></div>
+        <div><span class="mini-label">Pontos</span><div style="font-size:1.4rem;font-weight:800">${userRanking.totalPoints}</div></div>
+        <div><span class="mini-label">Exatos</span><div style="font-size:1.4rem;font-weight:800">${userRanking.exact}</div></div>
+        <div><span class="mini-label">Parciais</span><div style="font-size:1.4rem;font-weight:800">${userRanking.partial}</div></div>
       </div>
-    `).join('') + (upcoming.length === 0 ? '<p class="muted">Sem rodadas agendadas.</p>' : '');
+      ${betStatus}
+    `;
   }
 }
 
@@ -1689,13 +1715,6 @@ function renderStats() {
 }
 
 
-function renderIA() {
-  // Apenas utilizadores logados
-  if (!currentUser()) {
-    navigate('login');
-    return;
-  }
-}
 
 
 function addPlayer({ name, phone, basePoints }) {
@@ -1932,15 +1951,12 @@ function quickState(stateName) {
 
 function updatePageMeta(route) {
   const titles = {
-    home: ['Bolão do Cruzeiro Debates', 'Organização, competição e identidade forte do Cruzeiro.'],
-    login: ['Entrar', 'Acesso simples com nome e PIN.'],
-    dashboard: ['Dashboard', 'Visão rápida da rodada e do seu desempenho.'],
-    ranking: ['Ranking', 'Classificação geral, rodada e consistência.'],
-    round: ['Rodada', 'Transparência total da rodada atual.'],
+    home:    ['Bolão do Cruzeiro Debates', 'Organização, competição e identidade forte do Cruzeiro.'],
+    round:   ['Rodada', 'Aposta, countdown e detalhes da rodada atual.'],
+    ranking: ['Ranking & Estatísticas', 'Classificação geral, destaques e métricas do bolão.'],
     history: ['Histórico', 'Todos os palpites, resultados e pontos.'],
-    stats: ['Estatísticas', 'Indicadores gerais do bolão.'],
-    admin: ['Painel admin', 'Gestão completa das rodadas e resultados.'],
-    print: ['Modo printável', 'Versão limpa para screenshot, impressão ou PDF.']
+    admin:   ['Painel admin', 'Gestão completa das rodadas e resultados.'],
+    print:   ['Modo printável', 'Versão limpa para screenshot, impressão ou PDF.']
   };
 
   el('pageTitle').textContent = titles[route][0];
@@ -1961,15 +1977,12 @@ function navigate(route) {
 // Always-rendered (sidebar, logout btn, page meta) run unconditionally.
 const ROUTE_RENDERS = {
   home:      ['renderHome'],
-  login:     ['renderLoginOptions', 'updateLoginHint'],
-  dashboard: ['renderLoginOptions', 'updateLoginHint', 'renderDashboard'],
+  round:     ['renderDashboard', 'renderRound'],
   ranking:   ['renderRanking'],
-  round:     ['renderRound'],
   history:   ['renderHistory'],
   stats:     ['renderStats'],
   admin:     ['renderAdmin'],
-  ia:        ['renderIA'],
-  print:     ['renderCurrentPrint']  // consistent with the rest of the routing system
+  print:     ['renderCurrentPrint']
 };
 
 // Thin wrapper so renderPrint (which takes printMode) fits the ROUTE_RENDERS
@@ -1991,7 +2004,7 @@ function renderAll(route) {
   const fn_map = {
     renderHome, renderLoginOptions, updateLoginHint, renderDashboard,
     renderRanking, renderRound, renderHistory, renderStats, renderAdmin,
-    renderIA, renderCurrentPrint
+    renderCurrentPrint
   };
   (ROUTE_RENDERS[target] || []).forEach(fnName => {
     if (fn_map[fnName]) fn_map[fnName]();
@@ -2007,6 +2020,26 @@ function setupEvents() {
   el('shareRoundBtn').addEventListener('click', openWhatsAppShare);
   el('openWhatsBtn').addEventListener('click', openWhatsAppShare);
   el('missingBetsBtn')?.addEventListener('click', openMissingBetsWhatsApp);
+
+  // Tab switching — works for any .tab-bar inside the active view
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const bar = btn.closest('.tab-bar');
+    if (!bar) return;
+    const view = btn.closest('.view') || btn.closest('.tab-bar')?.parentElement;
+    bar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const targetId = btn.dataset.tab;
+    // Find all tab-panes that are siblings of this tab-bar
+    const container = bar.parentElement;
+    container.querySelectorAll('.tab-pane').forEach(pane => {
+      pane.classList.toggle('hidden', pane.id !== targetId);
+      pane.classList.toggle('active', pane.id === targetId);
+    });
+    // Trigger stats render when stats tab is clicked
+    if (targetId === 'tab-stats') renderStats();
+  });
 
   el('loginName').addEventListener('change', updateLoginHint);
   el('loginForm').addEventListener('submit', async (e) => {
@@ -2038,7 +2071,7 @@ function setupEvents() {
       opponentGoals: Number(el('betOpponent').value)
     });
 
-    renderAll('dashboard');
+    renderAll('round');
   });
 
   el('historyPlayerSelect').addEventListener('change', renderHistory);
@@ -2069,7 +2102,6 @@ function setupEvents() {
     const manualStateVal = el('roundManualState').value;
 
     if (deadlineMs < Date.now() && manualStateVal === 'auto') {
-      // Warn but don't block — admin may be editing a past round
       showToast('Aviso: o prazo de apostas já passou.');
     }
 
@@ -2083,15 +2115,13 @@ function setupEvents() {
     round.resultOpponent = el('resultOpponent').value === '' ? null : Number(el('resultOpponent').value);
     round.updatedAt      = new Date().toISOString();
 
-    updateRoundHighlight(round); // pass edited round explicitly, not getCurrentRound()
+    updateRoundHighlight(round);
     saveState('admin');
     renderAll('admin');
     showToast('Rodada guardada.');
   });
 
   el('newRoundBtn').addEventListener('click', () => {
-    // Get today's date parts in app timezone, then compose target strings directly.
-    // No manual UTC offset arithmetic — toLocalInputInAppTime handles the conversion.
     const todayParts = getZonedParts(new Date(), APP_TIMEZONE);
     const targetDate = new Date(Date.UTC(
       Number(todayParts.year),
@@ -2102,7 +2132,6 @@ function setupEvents() {
     const mm   = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
     const dd   = String(targetDate.getUTCDate()).padStart(2, '0');
 
-    // Build strings in app-timezone format, then round-trip through parseAppDateTime
     const matchTime = toLocalInputInAppTime(new Date(parseAppDateTime(`${yyyy}-${mm}-${dd}T20:00`)));
     const deadline  = toLocalInputInAppTime(new Date(parseAppDateTime(`${yyyy}-${mm}-${dd}T19:30`)));
 
@@ -2163,12 +2192,12 @@ function setupEvents() {
 
   el('printRankingBtn').addEventListener('click', () => {
     printMode = 'ranking';
-    navigate('print');  // renderCurrentPrint() is called by ROUTE_RENDERS inside navigate()
+    navigate('print');
   });
 
   el('printRoundBtn').addEventListener('click', () => {
     printMode = 'round';
-    navigate('print');  // renderCurrentPrint() is called by ROUTE_RENDERS inside navigate()
+    navigate('print');
   });
 
   el('triggerPrintBtn').addEventListener('click', () => window.print());
@@ -2176,14 +2205,13 @@ function setupEvents() {
   el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
   el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
   el('aiWhatsBtn')?.addEventListener('click', aiGenerateWhatsApp);
-  el('iaNavBtn')?.addEventListener('click', () => navigate('ia'));
 }
 
 async function init() {
-  await initializeDataSource(); // restoreSession() called inside for both local and Firebase paths
+  await initializeDataSource();
   setupEvents();
   el('logoutBtn').classList.toggle('hidden', !session.user);
-  renderAll(session.user ? 'dashboard' : 'home');
+  renderAll(session.user ? 'round' : 'home');
 }
 
 init();
