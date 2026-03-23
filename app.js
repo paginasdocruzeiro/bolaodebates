@@ -124,7 +124,7 @@ function buildInitialState() {
   return {
     users: SEED_USERS,
     rounds: SEED_ROUNDS,
-    bets: {},
+    bets: [],
     lastRoundHighlight: {
       text: 'Pedro Lucas, único com acerto exato, foi o destaque da última rodada.',
       player: 'Pedro Lucas'
@@ -144,18 +144,10 @@ function normalizeState(raw) {
     phone: u.phone || seedPhoneMap[u.name] || ''
   }));
 
-  const normalizedBets = Array.isArray(raw.bets)
-    ? Object.fromEntries(
-        raw.bets
-          .filter(Boolean)
-          .map(b => [b.id, b])
-      )
-    : (raw.bets && typeof raw.bets === 'object' ? raw.bets : {});
-
   return {
     users: mergedUsers,
     rounds: Array.isArray(raw.rounds) ? raw.rounds : base.rounds,
-    bets: normalizedBets,
+    bets: Array.isArray(raw.bets) ? raw.bets : [],
     lastRoundHighlight: raw.lastRoundHighlight || base.lastRoundHighlight,
     initialRankingSnapshot: Array.isArray(raw.initialRankingSnapshot)
       ? raw.initialRankingSnapshot
@@ -302,69 +294,20 @@ function getFirebaseUid() {
   }
 }
 
-function saveBetsState() {
+function saveState() {
   applyAdminFlags();
   persistLocalState();
   if (firebaseDbRef) {
-    firebaseDbRef.child('bets').set(state.bets || {});
-  }
-}
-
-function saveUsersState() {
-  applyAdminFlags();
-  persistLocalState();
-  if (firebaseDbRef) {
-    firebaseDbRef.child('users').set(state.users || []);
-  }
-}
-
-function saveAdminState() {
-  applyAdminFlags();
-  persistLocalState();
-  if (firebaseDbRef) {
+    // Use update() instead of set() to merge with existing Firebase data,
+    // preventing accidental overwrite of nodes not present in local state.
     firebaseDbRef.update({
+      users:                  state.users,
       rounds:                 state.rounds,
+      bets:                   state.bets,
       lastRoundHighlight:     state.lastRoundHighlight,
       initialRankingSnapshot: state.initialRankingSnapshot
     });
   }
-}
-
-function saveState(scope = 'all') {
-  applyAdminFlags();
-  persistLocalState();
-  if (!firebaseDbRef) return;
-
-  if (scope === 'bets') {
-    firebaseDbRef.child('bets').set(state.bets || {});
-    return;
-  }
-
-  if (scope === 'users') {
-    firebaseDbRef.child('users').set(state.users || []);
-    return;
-  }
-
-  if (scope === 'admin') {
-    firebaseDbRef.update({
-      rounds:                 state.rounds,
-      lastRoundHighlight:     state.lastRoundHighlight,
-      initialRankingSnapshot: state.initialRankingSnapshot
-    });
-    return;
-  }
-
-  // Full sync used only when the database is being seeded or in controlled
-  // scenarios. Avoid this path for regular user actions, because Firebase
-  // rules may block writes to admin-only nodes even when the user is only
-  // trying to place a bet.
-  firebaseDbRef.update({
-    users:                  state.users,
-    rounds:                 state.rounds,
-    bets:                   state.bets,
-    lastRoundHighlight:     state.lastRoundHighlight,
-    initialRankingSnapshot: state.initialRankingSnapshot
-  });
 }
 
 function currentUser() {
@@ -390,16 +333,6 @@ function formatDateTime(iso) {
 
 function getRound(roundId) {
   return state.rounds.find(r => r.id === roundId);
-}
-
-function getBetsArray() {
-  if (!state?.bets) return [];
-  return Object.values(state.bets).filter(Boolean);
-}
-
-function getBetById(betId) {
-  if (!betId || !state?.bets) return null;
-  return state.bets[betId] || null;
 }
 
 function getLatestRound() {
@@ -432,7 +365,7 @@ function effectiveRoundState(round) {
   // Auto-upcoming: deadline is in the future but match is also far away (>48h)
   // and no bets have been placed yet — treat as upcoming so it doesn't hijack
   // the current active round in the dashboard.
-  const betsForRound = getBetsArray().filter(b => b.roundId === round.id).length;
+  const betsForRound = state.bets.filter(b => b.roundId === round.id).length;
   if (matchMs - nowMs > 48 * 3600000 && betsForRound === 0) return 'upcoming';
   return 'open';
 }
@@ -449,7 +382,7 @@ function roundStateLabel(round) {
 }
 
 function getBet(roundId, userName) {
-  return getBetsArray().find(b => b.roundId === roundId && b.userName === userName) || null;
+  return state.bets.find(b => b.roundId === roundId && b.userName === userName);
 }
 
 function getMissingBettors(round = getCurrentRound()) {
@@ -535,41 +468,25 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
   const nowIso = new Date().toISOString();
   const existing = getBet(roundId, userName);
 
-  const loggedUser = currentUser();
-  const firebaseUid = getFirebaseUid();
-
   if (existing) {
-    if (existing.userId && existing.userId !== loggedUser?.id) {
-      showToast('Não pode editar a aposta de outro utilizador.');
-      return;
-    }
-
-    state.bets[existing.id] = {
-      ...existing,
-      userId: existing.userId || loggedUser?.id || null,
-      firebaseUid: existing.firebaseUid || firebaseUid || null,
-      cruzeiroGoals,
-      opponentGoals,
-      updatedAt: nowIso
-    };
+    existing.cruzeiroGoals = cruzeiroGoals;
+    existing.opponentGoals = opponentGoals;
+    existing.updatedAt = nowIso;
     showToast('Palpite atualizado com sucesso.');
   } else {
-    const id = crypto.randomUUID();
-    state.bets[id] = {
-      id,
+    state.bets.push({
+      id: crypto.randomUUID(),
       roundId,
       userName,
-      userId: loggedUser?.id || null,
-      firebaseUid: firebaseUid || null,
       cruzeiroGoals,
       opponentGoals,
       createdAt: nowIso,
       updatedAt: nowIso
-    };
+    });
     showToast('Palpite registado com sucesso.');
   }
 
-  saveState('bets');
+  saveState();
 }
 
 function applyCompetitionPositions(arr, scoreField) {
@@ -771,7 +688,7 @@ function currentStreak(roundScores) {
 function getStatsSummary() {
   const ranking = calculateRankings();
   const roundRanking = getRoundRanking();
-  const totalBets = getBetsArray().length;
+  const totalBets = state.bets.length;
   const topExact = [...ranking].sort((a, b) => b.exact - a.exact || a.name.localeCompare(b.name))[0];
   const topPartial = [...ranking].sort((a, b) => b.partial - a.partial || a.name.localeCompare(b.name))[0];
   const bestAverage = [...ranking].sort((a, b) => b.avg - a.avg || a.name.localeCompare(b.name))[0];
@@ -1099,7 +1016,7 @@ async function loginOrRegister(name, pin) {
   if (!user.pin) {
     // First access: store hash with salt
     user.pin = newPinHash;
-    saveState('users');
+    saveState();
     showToast('PIN criado com sucesso.');
   } else {
     const storedIsHashed = isPinHashed(user.pin);
@@ -1115,14 +1032,11 @@ async function loginOrRegister(name, pin) {
     // Migrate plain text OR old hash (no salt) to new hash with userId salt
     if (!storedIsHashed || user.pin === oldPinHash) {
       user.pin = newPinHash;
-      saveState('users');
+      saveState();
     }
   }
 
   session.user = user;
-  const firebaseUid = getFirebaseUid();
-  user.firebaseUid = firebaseUid;
-  saveState('users');
   saveSession(user);
   el('logoutBtn').classList.remove('hidden');
   navigate('dashboard');
@@ -1328,7 +1242,7 @@ function renderRound() {
   const roundRanking = getRoundRanking(round);
 
   // Most popular bet
-  const allBets = getBetsArray().filter(b => b.roundId === round.id);
+  const allBets = state.bets.filter(b => b.roundId === round.id);
   const betCounts = {};
   allBets.forEach(b => {
     const key = `${b.cruzeiroGoals}x${b.opponentGoals}`;
@@ -1486,7 +1400,7 @@ function addPlayer({ name, phone, basePoints }) {
   };
   state.users.push(newUser);
   state.initialRankingSnapshot.push({ name, points: newUser.basePoints });
-  saveState('users');
+  saveState();
   showToast(`${name} adicionado com sucesso.`);
   return true;
 }
@@ -1498,7 +1412,7 @@ function removePlayer(userId) {
   if (!confirm(`Remover "${user.name}"? As apostas deste jogador serão mantidas no histórico.`)) return;
   state.users = state.users.filter(u => u.id !== userId);
   state.initialRankingSnapshot = state.initialRankingSnapshot.filter(s => s.name !== user.name);
-  saveState('users');
+  saveState();
   renderAdmin();
   showToast(`${user.name} removido.`);
 }
@@ -1695,7 +1609,7 @@ function quickState(stateName) {
   round.manualState = stateName;
   round.updatedAt = new Date().toISOString();
   updateRoundHighlight(round);
-  saveState('admin');
+  saveState();
   renderAll(currentRoute);
   showToast(`Rodada definida como ${roundStateLabel(round)}.`);
 }
@@ -1853,7 +1767,7 @@ function setupEvents() {
     round.updatedAt      = new Date().toISOString();
 
     updateRoundHighlight(round); // pass edited round explicitly, not getCurrentRound()
-    saveState('admin');
+    saveState();
     renderAll('admin');
     showToast('Rodada guardada.');
   });
@@ -1890,7 +1804,7 @@ function setupEvents() {
     };
 
     state.rounds.unshift(round);
-    saveState('admin');
+    saveState();
     renderAdmin();
     el('roundSelect').value = round.id;
     populateRoundForm(round.id);
@@ -1916,7 +1830,7 @@ function setupEvents() {
   el('closeRoundBtn').addEventListener('click', () => quickState('closed'));
   el('finalizeRoundBtn').addEventListener('click', () => quickState('finalized'));
   el('recalcBtn').addEventListener('click', () => {
-    saveState('admin');
+    saveState();
     renderAll(currentRoute);
     showToast('Ranking recalculado.');
   });
