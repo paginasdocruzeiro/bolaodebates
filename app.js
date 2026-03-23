@@ -1259,6 +1259,12 @@ function renderDashboard() {
   el('betCruzeiro').value = bet?.cruzeiroGoals ?? '';
   el('betOpponent').value = bet?.opponentGoals ?? '';
 
+  // Atualizar labels com o nome real do adversário e jogo
+  const betTitle = el('betFormTitle');
+  const betOpponentLabel = el('betOpponentLabel');
+  if (betTitle) betTitle.textContent = `Fazer aposta — Cruzeiro x ${round.opponent}`;
+  if (betOpponentLabel) betOpponentLabel.firstChild.textContent = round.opponent;
+
   const disabled = stateNow !== 'open';
   Array.from(el('betForm').querySelectorAll('input, button')).forEach(node => node.disabled = disabled);
 
