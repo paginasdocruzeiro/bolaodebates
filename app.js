@@ -539,7 +539,7 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
   const firebaseUid = getFirebaseUid();
 
   if (existing) {
-    if (existing.firebaseUid && existing.firebaseUid !== firebaseUid) {
+    if (existing.userId && existing.userId !== loggedUser?.id) {
       showToast('Não pode editar a aposta de outro utilizador.');
       return;
     }
