@@ -28,15 +28,11 @@
       </div>
 
       <nav class="menu">
-        <button data-route="home" class="menu-item active">Home</button>
-        <button data-route="login" class="menu-item">Entrar</button>
-        <button data-route="dashboard" class="menu-item">Dashboard</button>
-        <button data-route="ranking" class="menu-item">Ranking</button>
-        <button data-route="round" class="menu-item">Rodada</button>
-        <button data-route="history" class="menu-item">Histórico</button>
-        <button data-route="stats" class="menu-item">Estatísticas</button>
-        <button data-route="admin" class="menu-item hidden" id="adminNavBtn">Admin</button>
-        <button data-route="ia" class="menu-item hidden" id="iaNavBtn">✨ IA</button>
+        <button data-route="home" class="menu-item active">🏠 Home</button>
+        <button data-route="round" class="menu-item">⚽ Rodada</button>
+        <button data-route="ranking" class="menu-item">🏆 Ranking</button>
+        <button data-route="history" class="menu-item">📋 Histórico</button>
+        <button data-route="admin" class="menu-item hidden" id="adminNavBtn">⚙️ Admin</button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -65,41 +61,14 @@
 
       <main class="content">
         <section class="view active" id="view-home">
-          <div class="hero-card">
-            <div class="hero-copy">
-              <img src="Bolao1.png" alt="Logo do bolão" class="hero-logo" />
+          <!-- Estado: visitante (sem sessão) -->
+          <div id="homeGuest" class="home-two-col">
+            <div class="home-login-panel panel">
+              <img src="Bolao1.png" alt="Logo do bolão" class="home-logo" />
               <span class="eyebrow">Bolão fechado entre amigos</span>
-              <h2>Um bolão moderno, claro e rápido para cada jogo do Cruzeiro.</h2>
-              <p>Palpites com prazo, pontuação automática, ranking geral, ranking da rodada, histórico por jogador, estatísticas e partilha instantânea no WhatsApp.</p>
-              <div class="hero-actions">
-                <button class="btn btn-primary" data-route="login">Entrar para apostar</button>
-                <button class="btn btn-secondary" data-route="ranking">Ver ranking</button>
-              </div>
-            </div>
-            <div class="hero-side">
-              <div class="mini-panel">
-                <span class="mini-label">Próxima rodada</span>
-                <div id="homeNextMatch"></div>
-              </div>
-              <div class="mini-panel">
-                <span class="mini-label">Destaque</span>
-                <div id="lastHighlightCard"></div>
-              </div>
-              <div class="mini-panel" id="homeUpcomingPanel">
-                <span class="mini-label">Calendário</span>
-                <div id="homeUpcomingRounds"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="view" id="view-login">
-          <div class="login-wrap">
-            <article class="panel narrow">
-              <img src="Bolao1.png" alt="Logo do bolão" class="login-logo" />
-              <h2>Acesso ao bolão</h2>
-              <p class="muted">No primeiro acesso, o participante escolhe o nome e define o seu PIN de 4 dígitos. Nos acessos seguintes, entra com nome e PIN.</p>
-              <form id="loginForm" class="form-stack">
+              <h2 class="home-title">Bolão do Cruzeiro Debates</h2>
+              <p class="muted">Palpites com prazo, pontuação automática e ranking em tempo real. Entra para apostar.</p>
+              <form id="loginForm" class="form-stack" style="margin-top:20px;">
                 <label>
                   Nome
                   <select id="loginName" required></select>
@@ -111,75 +80,174 @@
                 <div class="notice" id="loginHint"></div>
                 <button class="btn btn-primary full" type="submit" id="loginSubmitBtn">Entrar</button>
               </form>
-            </article>
+            </div>
+            <div class="home-side-panels">
+              <div class="mini-panel">
+                <span class="mini-label">Próxima rodada</span>
+                <div id="homeNextMatch"></div>
+              </div>
+              <div class="mini-panel">
+                <span class="mini-label">Destaque</span>
+                <div id="lastHighlightCard"></div>
+              </div>
+              <div class="mini-panel hidden" id="homeUpcomingPanel">
+                <span class="mini-label">Calendário</span>
+                <div id="homeUpcomingRounds"></div>
+              </div>
+            </div>
           </div>
-        </section>
 
-        <section class="view" id="view-dashboard">
-          <div class="section-grid top-cards">
-            <article class="panel">
-              <div class="panel-head between">
-                <div>
+          <!-- Estado: utilizador logado -->
+          <div id="homeUser" class="hidden">
+            <div class="home-two-col" style="margin-bottom:22px;">
+              <div class="home-user-card panel">
+                <span class="mini-label">Bem-vindo de volta</span>
+                <div id="homeUserWelcome"></div>
+              </div>
+              <div class="home-side-panels">
+                <div class="mini-panel">
                   <span class="mini-label">Próxima rodada</span>
-                  <h3>Jogo e estado</h3>
+                  <div id="homeNextMatchLogged"></div>
                 </div>
-                <span class="state-pill" id="roundStatusPill">—</span>
-              </div>
-              <div id="dashboardNextMatch"></div>
-            </article>
-
-            <article class="panel">
-              <span class="mini-label">Prazo</span>
-              <h3>Contagem regressiva</h3>
-              <div class="countdown" id="countdown">—</div>
-              <p class="muted" id="deadlineText"></p>
-            </article>
-
-            <article class="panel">
-              <span class="mini-label">Seu desempenho</span>
-              <h3>Resumo do utilizador</h3>
-              <div id="userPerformanceCard"></div>
-            </article>
-          </div>
-
-          <div class="section-grid two-col">
-            <article class="panel">
-              <div class="panel-head between">
-                <div>
-                  <span class="mini-label">Palpite</span>
-                  <h3 id="betFormTitle">Fazer aposta</h3>
+                <div class="mini-panel">
+                  <span class="mini-label">Destaque</span>
+                  <div id="lastHighlightCardLogged"></div>
                 </div>
               </div>
-              <form id="betForm" class="form-stack compact">
-                <div class="score-grid">
-                  <label>
-                    Cruzeiro
-                    <input id="betCruzeiro" type="number" min="0" max="20" required />
-                  </label>
-                  <div class="versus">x</div>
-                  <label id="betOpponentLabel">
-                    Adversário
-                    <input id="betOpponent" type="number" min="0" max="20" required />
-                  </label>
-                </div>
-                <button class="btn btn-primary" type="submit">Guardar aposta</button>
-              </form>
-              <div id="betConfirmation" class="notice hidden"></div>
-            </article>
+            </div>
 
+            <!-- Secção IA -->
+            <div class="section-head" style="margin-bottom:16px;">
+              <div>
+                <h2>✨ IA do Bolão</h2>
+                <p class="muted">Análises, previsões e mensagens geradas pelo Gemini.</p>
+              </div>
+            </div>
+            <div class="section-grid home-ia-grid" style="margin-bottom:18px;">
+              <article class="panel">
+                <span class="mini-label">Análise</span>
+                <h3>🏆 Análise da rodada</h3>
+                <p class="muted" style="margin-bottom:14px;">Comentário automático do resultado com drama, destaques e provocações.</p>
+                <button class="btn btn-primary" id="aiAnalyzeBtn">🏆 Analisar rodada atual</button>
+              </article>
+              <article class="panel">
+                <span class="mini-label">Previsão</span>
+                <h3>🔮 Previsão do próximo jogo</h3>
+                <p class="muted" style="margin-bottom:14px;">Com base no histórico de apostas de cada jogador, quem vai acertar?</p>
+                <button class="btn btn-secondary" id="aiPredictBtn">🔮 Gerar previsão</button>
+              </article>
+              <article class="panel">
+                <span class="mini-label">WhatsApp</span>
+                <h3>📲 Mensagem criativa</h3>
+                <p class="muted" style="margin-bottom:14px;">Mensagem animada com ranking e hype para enviar no grupo.</p>
+                <button class="btn btn-secondary" id="aiWhatsBtn">📲 Gerar mensagem</button>
+              </article>
+            </div>
             <article class="panel">
-              <span class="mini-label">Atividade</span>
-              <h3>Últimas apostas</h3>
-              <div id="quickHistory"></div>
+              <span class="mini-label">Resultado</span>
+              <h3>Resposta da IA</h3>
+              <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;min-height:180px;"></div>
+              <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clica num dos botões acima para gerar conteúdo.</div>
+              <div class="inline-actions" style="margin-top:14px;">
+                <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
+                <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
+              </div>
             </article>
           </div>
         </section>
 
+        <section class="view" id="view-round">
+          <!-- Tabs: Apostar | Rodada -->
+          <div class="tab-bar">
+            <button class="tab-btn active" data-tab="tab-bet">⚽ Apostar</button>
+            <button class="tab-btn" data-tab="tab-round">📊 Detalhes da rodada</button>
+          </div>
+
+          <!-- Tab: Apostar (antigo Dashboard) -->
+          <div class="tab-pane active" id="tab-bet">
+            <div class="section-grid top-cards">
+              <article class="panel">
+                <div class="panel-head between">
+                  <div>
+                    <span class="mini-label">Rodada atual</span>
+                    <h3>Jogo e estado</h3>
+                  </div>
+                  <span class="state-pill" id="roundStatusPill">—</span>
+                </div>
+                <div id="dashboardNextMatch"></div>
+              </article>
+
+              <article class="panel">
+                <span class="mini-label">Prazo</span>
+                <h3>Contagem regressiva</h3>
+                <div class="countdown" id="countdown">—</div>
+                <p class="muted" id="deadlineText"></p>
+              </article>
+
+              <article class="panel">
+                <span class="mini-label">Seu desempenho</span>
+                <h3>Resumo</h3>
+                <div id="userPerformanceCard"></div>
+              </article>
+            </div>
+
+            <div class="section-grid two-col">
+              <article class="panel">
+                <div class="panel-head between">
+                  <div>
+                    <span class="mini-label">Palpite</span>
+                    <h3 id="betFormTitle">Fazer aposta</h3>
+                  </div>
+                </div>
+                <form id="betForm" class="form-stack compact">
+                  <div class="score-grid">
+                    <label>
+                      Cruzeiro
+                      <input id="betCruzeiro" type="number" min="0" max="20" required />
+                    </label>
+                    <div class="versus">x</div>
+                    <label id="betOpponentLabel">
+                      Adversário
+                      <input id="betOpponent" type="number" min="0" max="20" required />
+                    </label>
+                  </div>
+                  <button class="btn btn-primary" type="submit">Guardar aposta</button>
+                </form>
+                <div id="betConfirmation" class="notice hidden"></div>
+              </article>
+
+              <article class="panel">
+                <span class="mini-label">Atividade</span>
+                <h3>Últimas apostas</h3>
+                <div id="quickHistory"></div>
+              </article>
+            </div>
+          </div>
+
+          <!-- Tab: Detalhes da rodada (antigo view-round) -->
+          <div class="tab-pane hidden" id="tab-round">
+            <div class="section-head">
+              <div>
+                <h2>Rodada</h2>
+                <p class="muted">Transparência total da rodada selecionada.</p>
+              </div>
+              <div class="inline-actions">
+                <select id="roundViewSelect" style="padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.05);color:var(--text);border:1px solid rgba(255,255,255,.1);min-width:200px;"></select>
+                <button class="btn btn-ghost" id="shareRoundBtn">WhatsApp</button>
+                <button class="btn btn-ghost" id="printRoundBtn">Versão printável</button>
+              </div>
+            </div>
+            <article class="panel" id="roundSummary"></article>
+            <article class="panel" style="margin-top:18px;">
+              <div class="table-wrap" id="roundTableWrap"></div>
+            </article>
+          </div>
+        </section>
         <section class="view" id="view-ranking">
           <div class="section-head">
             <div>
               <h2>Ranking</h2>
-              <p class="muted">Classificação geral, destaques da rodada e consistência.</p>
+              <p class="muted">Classificação, destaques e estatísticas do bolão.</p>
             </div>
             <div class="inline-actions">
               <button class="btn btn-ghost" id="shareRankingBtn">WhatsApp</button>
@@ -187,42 +255,37 @@
             </div>
           </div>
 
-          <div class="section-grid two-col">
-            <article class="panel">
-              <span class="mini-label">Geral</span>
-              <h3>Ranking geral</h3>
-              <div class="table-wrap" id="overallRankingWrap"></div>
-            </article>
-            <article class="panel">
-              <span class="mini-label">Rodada</span>
-              <h3>Destaques automáticos</h3>
-              <div id="roundRankingWrap"></div>
+          <!-- Tabs: Ranking | Estatísticas -->
+          <div class="tab-bar">
+            <button class="tab-btn active" data-tab="tab-ranking">🏆 Ranking</button>
+            <button class="tab-btn" data-tab="tab-stats">📈 Estatísticas</button>
+          </div>
+
+          <!-- Tab: Ranking -->
+          <div class="tab-pane active" id="tab-ranking">
+            <div class="section-grid two-col">
+              <article class="panel">
+                <span class="mini-label">Geral</span>
+                <h3>Ranking geral</h3>
+                <div class="table-wrap" id="overallRankingWrap"></div>
+              </article>
+              <article class="panel">
+                <span class="mini-label">Rodada</span>
+                <h3>Destaques automáticos</h3>
+                <div id="roundRankingWrap"></div>
+              </article>
+            </div>
+            <article class="panel" style="margin-top:18px;">
+              <span class="mini-label">Regularidade</span>
+              <h3>Ranking de consistência</h3>
+              <div class="table-wrap" id="consistencyWrap"></div>
             </article>
           </div>
 
-          <article class="panel">
-            <span class="mini-label">Regularidade</span>
-            <h3>Ranking de consistência</h3>
-            <div class="table-wrap" id="consistencyWrap"></div>
-          </article>
-        </section>
-
-        <section class="view" id="view-round">
-          <div class="section-head">
-            <div>
-              <h2>Rodada</h2>
-              <p class="muted">Transparência total da rodada selecionada.</p>
-            </div>
-            <div class="inline-actions">
-              <select id="roundViewSelect" style="padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.05);color:var(--text);border:1px solid rgba(255,255,255,.1);min-width:200px;"></select>
-              <button class="btn btn-ghost" id="shareRoundBtn">WhatsApp</button>
-              <button class="btn btn-ghost" id="printRoundBtn">Versão printável</button>
-            </div>
+          <!-- Tab: Estatísticas -->
+          <div class="tab-pane hidden" id="tab-stats">
+            <div class="stats-grid" id="statsGrid"></div>
           </div>
-          <article class="panel" id="roundSummary"></article>
-          <article class="panel">
-            <div class="table-wrap" id="roundTableWrap"></div>
-          </article>
         </section>
 
         <section class="view" id="view-history">
@@ -242,16 +305,6 @@
             <div id="historySummary"></div>
             <div class="table-wrap" id="historyTableWrap"></div>
           </article>
-        </section>
-
-        <section class="view" id="view-stats">
-          <div class="section-head">
-            <div>
-              <h2>Estatísticas</h2>
-              <p class="muted">Métricas gerais do bolão e dos participantes.</p>
-            </div>
-          </div>
-          <div class="stats-grid" id="statsGrid"></div>
         </section>
 
         <section class="view" id="view-admin">
@@ -377,44 +430,6 @@
           </div>
         </section>
 
-        <section class="view" id="view-ia">
-          <div class="section-head">
-            <div>
-              <h2>✨ IA do Bolão</h2>
-              <p class="muted">Análises, previsões e mensagens geradas pelo Gemini.</p>
-            </div>
-          </div>
-          <div class="section-grid" style="gap:18px;">
-            <article class="panel">
-              <span class="mini-label">Análise</span>
-              <h3>🏆 Análise da rodada</h3>
-              <p class="muted" style="margin-bottom:14px;">Comentário automático do resultado com drama, destaques e provocações.</p>
-              <button class="btn btn-primary" id="aiAnalyzeBtn">🏆 Analisar rodada atual</button>
-            </article>
-            <article class="panel">
-              <span class="mini-label">Previsão</span>
-              <h3>🔮 Previsão do próximo jogo</h3>
-              <p class="muted" style="margin-bottom:14px;">Com base no histórico de apostas de cada jogador, quem vai acertar?</p>
-              <button class="btn btn-secondary" id="aiPredictBtn">🔮 Gerar previsão</button>
-            </article>
-            <article class="panel">
-              <span class="mini-label">WhatsApp</span>
-              <h3>📲 Mensagem criativa</h3>
-              <p class="muted" style="margin-bottom:14px;">Mensagem animada com ranking e hype para enviar no grupo.</p>
-              <button class="btn btn-secondary" id="aiWhatsBtn">📲 Gerar mensagem</button>
-            </article>
-          </div>
-          <article class="panel" style="margin-top:18px;">
-            <span class="mini-label">Resultado</span>
-            <h3>Resposta da IA</h3>
-            <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;min-height:260px;"></div>
-            <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clica num dos botões acima para gerar conteúdo.</div>
-            <div class="inline-actions" style="margin-top:14px;">
-              <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
-              <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
-            </div>
-          </article>
-        </section>
 
         <section class="view" id="view-print">
           <div class="print-toolbar">
