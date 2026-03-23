@@ -411,8 +411,38 @@ function generateMissingBetsMessage() {
 }
 
 function openMissingBetsWhatsApp() {
-  const url = `https://wa.me/?text=${encodeURIComponent(generateMissingBetsMessage())}`;
-  window.open(url, '_blank');
+  const round = getCurrentRound();
+  if (!round) { showToast("Sem rodada ativa."); return; }
+
+  const missing = getMissingBettors(round);
+  if (!missing.length) { showToast("Todos já apostaram!"); return; }
+
+  const withPhone = missing.filter(u => u.phone);
+  const withoutPhone = missing.filter(u => !u.phone);
+
+  if (!withPhone.length) {
+    const url = `https://wa.me/?text=${encodeURIComponent(generateMissingBetsMessage())}`;
+    window.open(url, "_blank");
+    return;
+  }
+
+  const deadline = formatDateTime(round.deadline);
+  const msg = encodeURIComponent(
+    `⚽ Olá! Ainda não apostaste no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcede aqui: https://paginasdocruzeiro.github.io/bolaodebates/`
+  );
+
+  withPhone.forEach((user, i) => {
+    const phone = user.phone.replace(/\D/g, "");
+    setTimeout(() => {
+      window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    }, i * 600);
+  });
+
+  if (withoutPhone.length) {
+    setTimeout(() => {
+      showToast(`Sem número: ${withoutPhone.map(u => u.name).join(", ")}`);
+    }, withPhone.length * 600 + 200);
+  }
 }
 
 function scorePrediction(predC, predO, realC, realO) {
