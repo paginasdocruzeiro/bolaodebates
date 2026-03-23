@@ -535,9 +535,19 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
   const nowIso = new Date().toISOString();
   const existing = getBet(roundId, userName);
 
+  const loggedUser = currentUser();
+  const firebaseUid = getFirebaseUid();
+
   if (existing) {
+    if (existing.firebaseUid && existing.firebaseUid !== firebaseUid) {
+      showToast('Não pode editar a aposta de outro utilizador.');
+      return;
+    }
+
     state.bets[existing.id] = {
       ...existing,
+      userId: existing.userId || loggedUser?.id || null,
+      firebaseUid: existing.firebaseUid || firebaseUid || null,
       cruzeiroGoals,
       opponentGoals,
       updatedAt: nowIso
@@ -549,6 +559,8 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
       id,
       roundId,
       userName,
+      userId: loggedUser?.id || null,
+      firebaseUid: firebaseUid || null,
       cruzeiroGoals,
       opponentGoals,
       createdAt: nowIso,
@@ -1108,6 +1120,9 @@ async function loginOrRegister(name, pin) {
   }
 
   session.user = user;
+  const firebaseUid = getFirebaseUid();
+  user.firebaseUid = firebaseUid;
+  saveState('users');
   saveSession(user);
   el('logoutBtn').classList.remove('hidden');
   navigate('dashboard');
