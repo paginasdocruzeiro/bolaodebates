@@ -534,9 +534,11 @@ function scorePrediction(predC, predO, realC, realO) {
 function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
   const nowIso = new Date().toISOString();
   const existing = getBet(roundId, userName);
-
   const loggedUser = currentUser();
   const firebaseUid = getFirebaseUid();
+
+  let betId;
+  let updatedBet;
 
   if (existing) {
     if (existing.userId && existing.userId !== (loggedUser?.id || null)) {
@@ -544,7 +546,7 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
       return;
     }
 
-    state.bets[existing.id] = {
+    updatedBet = {
       ...existing,
       userId: existing.userId || loggedUser?.id || null,
       firebaseUid: existing.firebaseUid || firebaseUid || null,
@@ -552,11 +554,13 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
       opponentGoals,
       updatedAt: nowIso
     };
+    betId = existing.id;
+    state.bets[betId] = updatedBet;
     showToast('Palpite atualizado com sucesso.');
   } else {
-    const id = crypto.randomUUID();
-    state.bets[id] = {
-      id,
+    betId = crypto.randomUUID();
+    updatedBet = {
+      id: betId,
       roundId,
       userName,
       userId: loggedUser?.id || null,
@@ -566,10 +570,21 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
       createdAt: nowIso,
       updatedAt: nowIso
     };
+    state.bets[betId] = updatedBet;
     showToast('Palpite registado com sucesso.');
   }
 
-  saveState('bets');
+  // Guardar persistência local
+  persistLocalState();
+
+  // Guardar só esta aposta individual no Firebase (evita conflito com regras por $betId)
+  if (firebaseDbRef) {
+    firebaseDbRef.child('bets').child(betId).set(updatedBet)
+      .catch(err => {
+        console.error('Erro ao guardar aposta no Firebase:', err);
+        showToast('Erro ao guardar no servidor. Tenta novamente.');
+      });
+  }
 }
 
 function applyCompetitionPositions(arr, scoreField) {
