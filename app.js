@@ -144,27 +144,13 @@ function normalizeState(raw) {
     phone: u.phone || seedPhoneMap[u.name] || ''
   }));
 
-  // Normalizar bets: suporta array (formato antigo) e objeto (formato novo)
-  let rawBetsObj = {};
-  if (Array.isArray(raw.bets)) {
-    raw.bets.filter(Boolean).forEach(b => {
-      const id = b.id || crypto.randomUUID();
-      rawBetsObj[id] = { ...b, id };
-    });
-  } else if (raw.bets && typeof raw.bets === 'object') {
-    Object.entries(raw.bets).forEach(([key, b]) => {
-      if (!b) return;
-      const id = b.id || key;
-      // Garantir que cruzeiroGoals e opponentGoals são números
-      rawBetsObj[id] = {
-        ...b,
-        id,
-        cruzeiroGoals: b.cruzeiroGoals !== undefined ? Number(b.cruzeiroGoals) : undefined,
-        opponentGoals: b.opponentGoals !== undefined ? Number(b.opponentGoals) : undefined
-      };
-    });
-  }
-  const normalizedBets = rawBetsObj;
+  const normalizedBets = Array.isArray(raw.bets)
+    ? Object.fromEntries(
+        raw.bets
+          .filter(Boolean)
+          .map(b => [b.id, b])
+      )
+    : (raw.bets && typeof raw.bets === 'object' ? raw.bets : {});
 
   return {
     users: mergedUsers,
@@ -507,7 +493,7 @@ function openMissingBetsWhatsApp() {
 
   const deadline = formatDateTime(round.deadline);
   const msg = encodeURIComponent(
-    `⚽ Olá! Ainda não apostaste no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcede aqui: https://paginasdocruzeiro.github.io/bolaodebates/`
+    `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://paginasdocruzeiro.github.io/bolaodebates/`
   );
 
   withPhone.forEach((user, i) => {
@@ -553,7 +539,7 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
 
   if (existing) {
     if (existing.userId && existing.userId !== (loggedUser?.id || null)) {
-      showToast('Não pode editar a aposta de outro utilizador.');
+      showToast('Não é possível editar a aposta de outro participante.');
       return;
     }
 
@@ -582,7 +568,7 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
       updatedAt: nowIso
     };
     state.bets[betId] = updatedBet;
-    showToast('Palpite registado com sucesso.');
+    showToast('Palpite registrado com sucesso.');
   }
 
   // Guardar persistência local
@@ -593,7 +579,7 @@ function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
     firebaseDbRef.child('bets').child(betId).set(updatedBet)
       .catch(err => {
         console.error('Erro ao guardar aposta no Firebase:', err);
-        showToast('Erro ao guardar no servidor. Tenta novamente.');
+        showToast('Erro ao salvar no servidor. Tente novamente.');
       });
   }
 }
@@ -690,7 +676,7 @@ function getRoundRanking(round = getCurrentRound()) {
 
     return {
       name: user.name,
-      bet:    bet && bet.cruzeiroGoals !== undefined ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : 'Sem palpite',
+      bet:    bet ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : 'Sem palpite',
       points: score.points,
       type:   score.type   // 'exato' | 'parcial' | 'erro' | 'sem aposta'
     };
@@ -744,7 +730,7 @@ function getUserHistory(userName) {
         competition: round.competition,
         opponent: round.opponent,
         resultLabel: hasResult ? `${round.resultCruzeiro}x${round.resultOpponent}` : 'A definir',
-        betLabel: bet && bet.cruzeiroGoals !== undefined && bet.opponentGoals !== undefined ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (didNotBet ? 'Sem palpite' : '-'),
+        betLabel: bet ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (didNotBet ? 'Sem palpite' : '-'),
         pointsValue: hasResult ? (score ? score.points : 0) : null,
         pointsLabel: didNotBet ? '0 (não apostou)' : (hasResult ? `${score ? score.points : 0} ponto(s)` : '-'),
         type: didNotBet ? 'sem aposta' : (score?.type || '-')
@@ -1091,8 +1077,30 @@ function badge(type) {
   return `<span class="badge ${cls[type] || ''}">${labels[type] || type}</span>`;
 }
 
-function tableHTML(headers, rows) {
-  return `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+
+const AVATAR_COLORS = ['#3B82F6', '#8B5CF6', '#EC4899', '#10B981', '#F59E0B', '#EF4444', '#06B6D4', '#84CC16', '#F97316', '#6366F1', '#14B8A6'];
+
+function avatarHTML(name) {
+  const idx = name.charCodeAt(0) % AVATAR_COLORS.length;
+  const color = AVATAR_COLORS[idx];
+  const initial = name.charAt(0).toUpperCase();
+  return `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:${color};color:#fff;font-size:.75rem;font-weight:800;flex-shrink:0;vertical-align:middle;margin-right:6px;">${initial}</span>`;
+}
+
+function positionDisplay(pos) {
+  if (pos === 1) return '🥇';
+  if (pos === 2) return '🥈';
+  if (pos === 3) return '🥉';
+  return `${pos}º`;
+}
+
+function tableHTML(headers, rows, highlightFirst = false) {
+  const tbody = rows.map((r, i) => {
+    const isFirst = highlightFirst && i === 0;
+    const style = isFirst ? ' style="background:rgba(215,184,107,0.10);border-left:3px solid var(--gold);"' : '';
+    return `<tr${style}>${r.map(c => `<td>${c}</td>`).join('')}</tr>`;
+  }).join('');
+  return `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${tbody}</tbody></table>`;
 }
 
 function renderLoginOptions() {
@@ -1114,7 +1122,7 @@ function updateLoginHint() {
     el('loginHint').textContent = 'Primeiro acesso: defina agora o seu PIN de 4 dígitos.';
     el('loginSubmitBtn').textContent = 'Criar PIN e entrar';
   } else {
-    el('loginHint').textContent = 'Acesso existente: introduza o PIN já definido.';
+    el('loginHint').textContent = 'Acesso existente: insira o PIN já cadastrado.';
     el('loginSubmitBtn').textContent = 'Entrar';
   }
 }
@@ -1255,7 +1263,7 @@ function renderHome() {
     const betStatus = round && effectiveRoundState(round) === 'open'
       ? (bet
           ? `<p style="color:var(--green)">✅ Apostaste ${bet.cruzeiroGoals}x${bet.opponentGoals}</p>`
-          : `<p style="color:var(--yellow)">⚠️ Ainda não apostaste nesta rodada! <button class="btn btn-primary" style="padding:6px 12px;font-size:.85rem;margin-top:6px;" onclick="navigate('round')">Apostar agora</button></p>`)
+          : `<p style="color:var(--yellow)">⚠️ Você ainda não apostou nesta rodada! <button class="btn btn-primary" style="padding:6px 12px;font-size:.85rem;margin-top:6px;" onclick="navigate('round')">Apostar agora</button></p>`)
       : '';
     welcome.innerHTML = `
       <h2 style="margin:8px 0 4px;font-size:1.6rem;font-weight:900;letter-spacing:-0.02em">${user.name} 👋</h2>
@@ -1292,11 +1300,28 @@ function renderDashboard() {
 
   el('roundStatusPill').textContent = roundStateLabel(round);
   el('roundStatusPill').classList.toggle('upcoming', effectiveRoundState(round) === 'upcoming');
+
+  // Barra de progresso de apostas
+  const totalUsers = state.users.length;
+  const betsPlaced = getBetsArray().filter(b => b.roundId === round.id).length;
+  const progressPct = totalUsers > 0 ? Math.round((betsPlaced / totalUsers) * 100) : 0;
+  const progressBar = stateNow === 'open' ? `
+    <div style="margin-top:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-2);margin-bottom:4px;">
+        <span>Apostas recebidas</span>
+        <span>${betsPlaced}/${totalUsers}</span>
+      </div>
+      <div style="background:rgba(255,255,255,.08);border-radius:999px;height:8px;overflow:hidden;">
+        <div style="background:${progressPct === 100 ? 'var(--green)' : 'var(--accent)'};width:${progressPct}%;height:100%;border-radius:999px;transition:width .4s ease;"></div>
+      </div>
+    </div>` : '';
+
   el('dashboardNextMatch').innerHTML = `
     <p><strong>Cruzeiro x ${round.opponent}</strong></p>
     <p>${round.competition}</p>
     <p><strong>Jogo:</strong> ${formatDateTime(round.matchTime)}</p>
-    <p><strong>Fecho:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
+    <p><strong>Prazo:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
+    ${progressBar}
   `;
 
   el('userPerformanceCard').innerHTML = userRanking ? `
@@ -1312,6 +1337,13 @@ function renderDashboard() {
   el('betCruzeiro').value = bet?.cruzeiroGoals ?? '';
   el('betOpponent').value = bet?.opponentGoals ?? '';
 
+  // Banner de notificação de aposta em falta
+  const bannerEl = el('betMissingBanner');
+  if (bannerEl) {
+    const showBanner = stateNow === 'open' && !bet;
+    bannerEl.classList.toggle('hidden', !showBanner);
+  }
+
   // Atualizar labels com o nome real do adversário e jogo
   const betTitle = el('betFormTitle');
   const betOpponentLabel = el('betOpponentLabel');
@@ -1323,7 +1355,7 @@ function renderDashboard() {
 
   if (bet) {
     el('betConfirmation').classList.remove('hidden');
-    el('betConfirmation').innerHTML = `<strong>Palpite registado:</strong> ${bet.cruzeiroGoals}x${bet.opponentGoals}<br><span class="muted">Última gravação: ${formatDateTime(bet.updatedAt)}</span>`;
+    el('betConfirmation').innerHTML = `<strong>Palpite registrado:</strong> ${bet.cruzeiroGoals}x${bet.opponentGoals}<br><span class="muted">Última gravação: ${formatDateTime(bet.updatedAt)}</span>`;
   } else {
     el('betConfirmation').classList.add('hidden');
   }
@@ -1371,27 +1403,29 @@ function renderRanking() {
   el('overallRankingWrap').innerHTML = tableHTML(
     ['Pos.', 'Nome', 'Pontos', 'Mov.', 'Exatos', 'Parciais', 'Sequência'],
     ranking.map(item => [
-      `${item.position}º`,
-      item.name,
+      positionDisplay(item.position),
+      avatarHTML(item.name) + ' ' + item.name,
       String(item.totalPoints),
       movementHTML(item.movement, item.movementDelta),
       String(item.exact),
       String(item.partial),
       item.roundScores.length ? currentStreak(item.roundScores) : '—'
-    ])
+    ]),
+    true
   );
 
   el('consistencyWrap').innerHTML = tableHTML(
     ['Pos.', 'Nome', 'Média', 'Pontuou', 'Zeros', 'Sem palpite', 'Rodadas'],
     consistency.map(item => [
-      `${item.position}º`,
-      item.name,
+      positionDisplay(item.position),
+      avatarHTML(item.name) + ' ' + item.name,
       item.average.toFixed(2),
       String(item.scoringRounds),
-      String(item.zeroRounds),    // apostou e errou — clean field, no subtraction
-      String(item.missedRounds),  // não apostou — clean field
+      String(item.zeroRounds),
+      String(item.missedRounds),
       String(item.roundsPlayed)
-    ])
+    ]),
+    true
   );
 }
 
@@ -1487,7 +1521,7 @@ function renderRound() {
 
     return [
       user.name,
-      bet && bet.cruzeiroGoals !== undefined ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
+      bet             ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
       noBetWithResult ? '0'               : (score ? String(score.points) : '—'),
       noBetWithResult ? badge('sem aposta') : (score ? badge(score.type)  : '—')
     ];
@@ -1538,7 +1572,7 @@ function renderHistory() {
       Total acumulado: ${ranking.totalPoints} pontos<br>
       Exatos: ${ranking.exact}, Parciais: ${ranking.partial}<br>
       Perfil de apostador: ${profile}
-      ${ranking.roundScores.length ? `<br>Sequência actual: ${currentStreak(ranking.roundScores)}` : ''}
+      ${ranking.roundScores.length ? `<br>Sequência atual: ${currentStreak(ranking.roundScores)}` : ''}
     </div>
   ` : '';
 
@@ -1848,7 +1882,7 @@ function renderAdmin() {
     uidWrap.innerHTML = uid
       ? `<span class="sidebar-user-label">O teu UID Firebase</span>
          <code style="word-break:break-all;font-size:.82rem;color:var(--accent-soft)">${uid}</code>
-         <span class="muted" style="font-size:.78rem">Partilha este valor com o Ivo para ficares registado como admin.</span>`
+         <span class="muted" style="font-size:.78rem">Compartilhe esse valor com o Ivo para ser registrado como admin.</span>`
       : `<span class="muted" style="font-size:.78rem">UID não disponível (modo local).</span>`;
   }
 }
@@ -1938,7 +1972,12 @@ function startCountdown(deadlineIso) {
     const mins = Math.floor((diff % 3600000) / 60000);
     const secs = Math.floor((diff % 60000) / 1000);
 
-    el('countdown').textContent = `${days}d ${String(hours).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+    const timeStr = `${days}d ${String(hours).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m ${String(secs).padStart(2, '0')}s`;
+    const cdEl = el('countdown');
+    cdEl.textContent = timeStr;
+    // Urgente: menos de 1 hora
+    const isUrgent = diff < 3600000;
+    cdEl.classList.toggle('countdown-urgent', isUrgent);
   };
 
   update();
@@ -1986,7 +2025,7 @@ function updatePageMeta(route) {
     ranking: ['Ranking & Estatísticas', 'Classificação geral, destaques e métricas do bolão.'],
     history: ['Histórico', 'Todos os palpites, resultados e pontos.'],
     admin:   ['Painel admin', 'Gestão completa das rodadas e resultados.'],
-    print:   ['Modo printável', 'Versão limpa para screenshot, impressão ou PDF.']
+    print:   ['Versão para impressão', 'Versão limpa para captura de tela, impressão ou PDF.']
   };
 
   el('pageTitle').textContent = titles[route][0];
@@ -2148,7 +2187,7 @@ function setupEvents() {
     updateRoundHighlight(round);
     saveState('admin');
     renderAll('admin');
-    showToast('Rodada guardada.');
+    showToast('Rodada salva.');
   });
 
   el('newRoundBtn').addEventListener('click', () => {
