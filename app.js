@@ -144,13 +144,27 @@ function normalizeState(raw) {
     phone: u.phone || seedPhoneMap[u.name] || ''
   }));
 
-  const normalizedBets = Array.isArray(raw.bets)
-    ? Object.fromEntries(
-        raw.bets
-          .filter(Boolean)
-          .map(b => [b.id, b])
-      )
-    : (raw.bets && typeof raw.bets === 'object' ? raw.bets : {});
+  // Normalizar bets: suporta array (formato antigo) e objeto (formato novo)
+  let rawBetsObj = {};
+  if (Array.isArray(raw.bets)) {
+    raw.bets.filter(Boolean).forEach(b => {
+      const id = b.id || crypto.randomUUID();
+      rawBetsObj[id] = { ...b, id };
+    });
+  } else if (raw.bets && typeof raw.bets === 'object') {
+    Object.entries(raw.bets).forEach(([key, b]) => {
+      if (!b) return;
+      const id = b.id || key;
+      // Garantir que cruzeiroGoals e opponentGoals são números
+      rawBetsObj[id] = {
+        ...b,
+        id,
+        cruzeiroGoals: b.cruzeiroGoals !== undefined ? Number(b.cruzeiroGoals) : undefined,
+        opponentGoals: b.opponentGoals !== undefined ? Number(b.opponentGoals) : undefined
+      };
+    });
+  }
+  const normalizedBets = rawBetsObj;
 
   return {
     users: mergedUsers,
@@ -676,7 +690,7 @@ function getRoundRanking(round = getCurrentRound()) {
 
     return {
       name: user.name,
-      bet:    bet ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : 'Sem palpite',
+      bet:    bet && bet.cruzeiroGoals !== undefined ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : 'Sem palpite',
       points: score.points,
       type:   score.type   // 'exato' | 'parcial' | 'erro' | 'sem aposta'
     };
@@ -730,7 +744,7 @@ function getUserHistory(userName) {
         competition: round.competition,
         opponent: round.opponent,
         resultLabel: hasResult ? `${round.resultCruzeiro}x${round.resultOpponent}` : 'A definir',
-        betLabel: bet ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (didNotBet ? 'Sem palpite' : '-'),
+        betLabel: bet && bet.cruzeiroGoals !== undefined && bet.opponentGoals !== undefined ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (didNotBet ? 'Sem palpite' : '-'),
         pointsValue: hasResult ? (score ? score.points : 0) : null,
         pointsLabel: didNotBet ? '0 (não apostou)' : (hasResult ? `${score ? score.points : 0} ponto(s)` : '-'),
         type: didNotBet ? 'sem aposta' : (score?.type || '-')
@@ -1473,7 +1487,7 @@ function renderRound() {
 
     return [
       user.name,
-      bet             ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
+      bet && bet.cruzeiroGoals !== undefined ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
       noBetWithResult ? '0'               : (score ? String(score.points) : '—'),
       noBetWithResult ? badge('sem aposta') : (score ? badge(score.type)  : '—')
     ];
