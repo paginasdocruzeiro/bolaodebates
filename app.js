@@ -716,7 +716,9 @@ function getUserHistory(userName) {
     .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime))
     .map((round) => {
       const bet = getBet(round.id, userName);
-      const hasResult = round.resultCruzeiro !== null && round.resultOpponent !== null;
+      const hasResult =
+  Number.isInteger(round.resultCruzeiro) &&
+  Number.isInteger(round.resultOpponent);
       const score = bet && hasResult
         ? scorePrediction(bet.cruzeiroGoals, bet.opponentGoals, round.resultCruzeiro, round.resultOpponent)
         : null;
@@ -1404,7 +1406,9 @@ function renderRound() {
     return;
   }
 
-  const hasResult = round.resultCruzeiro !== null && round.resultOpponent !== null;
+ const hasResult =
+  Number.isInteger(round.resultCruzeiro) &&
+  Number.isInteger(round.resultOpponent);
   const resultText = hasResult ? `${round.resultCruzeiro}x${round.resultOpponent}` : 'Ainda não lançado';
 
   const roundRanking = getRoundRanking(round);
