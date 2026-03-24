@@ -16,7 +16,7 @@ const session = { user: null };
 let state = null;
 let countdownTimer = null;
 let printMode = 'ranking';
-const views = ['home', 'round', 'ranking', 'history', 'admin', 'print'];
+const views = ['home', 'login', 'dashboard', 'ranking', 'round', 'history', 'stats', 'admin', 'ia', 'print'];
 let currentRoute = 'home';
 let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
@@ -302,66 +302,20 @@ function getFirebaseUid() {
   }
 }
 
-function saveBetsState() {
-  // DEPRECATED — não usar. Apostas são gravadas individualmente em upsertBet().
-  // Esta função fazia .set() global que conflitua com as regras por $betId.
-  console.warn('saveBetsState() está deprecated. Use upsertBet() para gravar apostas individualmente.');
-  applyAdminFlags();
-  persistLocalState();
-}
-
-function saveUsersState() {
+function saveState() {
   applyAdminFlags();
   persistLocalState();
   if (firebaseDbRef) {
-    firebaseDbRef.child('users').set(state.users || []);
-  }
-}
-
-function saveAdminState() {
-  applyAdminFlags();
-  persistLocalState();
-  if (firebaseDbRef) {
+    // Use update() instead of set() to merge with existing Firebase data,
+    // preventing accidental overwrite of nodes not present in local state.
     firebaseDbRef.update({
+      users:                  state.users,
       rounds:                 state.rounds,
+      bets:                   state.bets,
       lastRoundHighlight:     state.lastRoundHighlight,
       initialRankingSnapshot: state.initialRankingSnapshot
     });
   }
-}
-
-function saveState(scope = 'all') {
-  applyAdminFlags();
-  persistLocalState();
-  if (!firebaseDbRef) return;
-
-  if (scope === 'bets') {
-    // SEGURO: não faz .set() global — apostas são gravadas individualmente em upsertBet()
-    // Apenas persiste localmente
-    return;
-  }
-
-  if (scope === 'users') {
-    firebaseDbRef.child('users').set(state.users || []);
-    return;
-  }
-
-  if (scope === 'admin') {
-    firebaseDbRef.update({
-      rounds:                 state.rounds,
-      lastRoundHighlight:     state.lastRoundHighlight,
-      initialRankingSnapshot: state.initialRankingSnapshot
-    });
-    return;
-  }
-
-  // Full sync — nunca inclui bets (cada aposta é gravada individualmente em upsertBet)
-  firebaseDbRef.update({
-    users:                  state.users,
-    rounds:                 state.rounds,
-    lastRoundHighlight:     state.lastRoundHighlight,
-    initialRankingSnapshot: state.initialRankingSnapshot
-  });
 }
 
 function currentUser() {
@@ -531,57 +485,30 @@ function scorePrediction(predC, predO, realC, realO) {
 function upsertBet({ roundId, userName, cruzeiroGoals, opponentGoals }) {
   const nowIso = new Date().toISOString();
   const existing = getBet(roundId, userName);
-  const loggedUser = currentUser();
-  const firebaseUid = getFirebaseUid();
-
-  let betId;
-  let updatedBet;
 
   if (existing) {
-    if (existing.userId && existing.userId !== (loggedUser?.id || null)) {
-      showToast('Não pode editar a aposta de outro utilizador.');
-      return;
-    }
-
-    updatedBet = {
+    state.bets[existing.id] = {
       ...existing,
-      userId: existing.userId || loggedUser?.id || null,
-      firebaseUid: existing.firebaseUid || firebaseUid || null,
       cruzeiroGoals,
       opponentGoals,
       updatedAt: nowIso
     };
-    betId = existing.id;
-    state.bets[betId] = updatedBet;
     showToast('Palpite atualizado com sucesso.');
   } else {
-    betId = crypto.randomUUID();
-    updatedBet = {
-      id: betId,
+    const id = crypto.randomUUID();
+    state.bets[id] = {
+      id,
       roundId,
       userName,
-      userId: loggedUser?.id || null,
-      firebaseUid: firebaseUid || null,
       cruzeiroGoals,
       opponentGoals,
       createdAt: nowIso,
       updatedAt: nowIso
     };
-    state.bets[betId] = updatedBet;
-    showToast('Palpite registado com sucesso.');
+    showToast('Palpite registrado com sucesso.');
   }
 
-  // Guardar persistência local
-  persistLocalState();
-
-  // Guardar só esta aposta individual no Firebase (evita conflito com regras por $betId)
-  if (firebaseDbRef) {
-    firebaseDbRef.child('bets').child(betId).set(updatedBet)
-      .catch(err => {
-        console.error('Erro ao guardar aposta no Firebase:', err);
-        showToast('Erro ao guardar no servidor. Tenta novamente.');
-      });
-  }
+  saveState();
 }
 
 function applyCompetitionPositions(arr, scoreField) {
@@ -695,7 +622,7 @@ function getConsistencyRanking() {
     zeroRounds: user.zeroRounds,     // apostou e errou
     missedRounds: user.missedRounds, // não apostou
     roundsPlayed: user.roundsPlayed,
-    // Missed rounds penalised more heavily (-6) than actual zeros (-3)
+    // Missed rounds penalised more heavily (-6) than atual zeros (-3)
     consistencyScore:
       (user.avg * 100) +
       (user.scoringRounds  *  5) -
@@ -716,9 +643,7 @@ function getUserHistory(userName) {
     .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime))
     .map((round) => {
       const bet = getBet(round.id, userName);
-      const hasResult =
-  Number.isInteger(round.resultCruzeiro) &&
-  Number.isInteger(round.resultOpponent);
+      const hasResult = round.resultCruzeiro !== null && round.resultOpponent !== null;
       const score = bet && hasResult
         ? scorePrediction(bet.cruzeiroGoals, bet.opponentGoals, round.resultCruzeiro, round.resultOpponent)
         : null;
@@ -930,22 +855,17 @@ async function callGemini(prompt) {
 async function aiAnalyzeRound() {
   const btn = el('aiAnalyzeBtn');
   const out = el('aiOutput');
-
-  // Usa a última rodada com resultado lançado (finalizada ou com resultado)
-  const round = [...state.rounds]
-    .filter(r => r.resultCruzeiro !== null && r.resultOpponent !== null)
-    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
-
-  if (!round) {
-    out.textContent = 'Nenhuma rodada com resultado lançado ainda.';
+  const round = getCurrentRound();
+  if (!round || round.resultCruzeiro === null) {
+    out.textContent = 'Esta função só está disponível depois de lançar o resultado da rodada.';
     out.classList.remove('hidden');
     return;
   }
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="ai-spinner"></span> A analisar...';
+  btn.textContent = '⏳ A analisar...';
   out.classList.remove('hidden');
-  out.innerHTML = '<span class="ai-loading-text">⚽ A buscar dados e a gerar análise...</span>';
+  out.textContent = 'A buscar dados e gerar análise...';
 
   const roundRanking = getRoundRanking(round);
   const ranking = calculateRankings();
@@ -981,29 +901,23 @@ ${footballCtx?.formData ? `Forma: ${footballCtx.formData}` : ''}`;
 async function aiPredictMatch() {
   const btn = el('aiPredictBtn');
   const out = el('aiOutput');
-
-  // Usa apenas rodada em aberto ou em espera — nunca uma já finalizada
-  const sorted = [...state.rounds]
-    .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
-  const round = sorted.find(r => ['open', 'upcoming'].includes(effectiveRoundState(r)));
-
+  const round = getCurrentRound();
   if (!round) {
-    out.textContent = 'Sem rodada aberta ou em espera para prever. Aguarda a próxima rodada ser criada.';
+    out.textContent = 'Sem rodada ativa para prever.';
     out.classList.remove('hidden');
     return;
   }
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="ai-spinner"></span> A prever...';
+  btn.textContent = '⏳ A prever...';
   out.classList.remove('hidden');
-  out.innerHTML = '<span class="ai-loading-text">🔮 A analisar histórico e gerar previsão...</span>';
+  out.textContent = 'A buscar dados e gerar previsão...';
 
   const ranking = calculateRankings();
   const footballCtx = await getCruzeiroContext();
   const allHistory = ranking.map(u => {
     const h = getUserHistory(u.name).filter(x => x.betLabel !== '-' && x.betLabel !== 'Sem palpite');
-    const resumo = h.slice(-5).map(x => `apostou ${x.betLabel} (resultado ${x.resultLabel}, ${x.pointsLabel})`).join('; ');
-    return `${u.name}: ${resumo || 'sem apostas ainda'}`;
+    return `${u.name}: ${h.slice(-5).map(x => x.betLabel).join(', ') || 'sem apostas ainda'}`;
   });
 
   const prompt = `Você é o Oráculo do Bolão Cruzeiro Debates. Faça uma previsão para Cruzeiro x ${round.opponent} (${round.competition}) usando APENAS os dados abaixo. PROIBIDO inventar estatísticas, jogadores ou informações que não constem nos dados. Base a previsão no histórico real de apostas de cada jogador. Português do Brasil, divertido, emojis, máximo 4 parágrafos.
@@ -1034,9 +948,9 @@ async function aiGenerateWhatsApp() {
   const round = getCurrentRound();
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="ai-spinner"></span> A criar mensagem...';
+  btn.textContent = '⏳ A criar mensagem...';
   out.classList.remove('hidden');
-  out.innerHTML = '<span class="ai-loading-text">📲 A preparar mensagem para o grupo...</span>';
+  out.textContent = 'A gerar mensagem criativa...';
 
   const ranking = calculateRankings();
   const roundRanking = getRoundRanking(round);
@@ -1124,7 +1038,7 @@ async function loginOrRegister(name, pin) {
   if (!user.pin) {
     // First access: store hash with salt
     user.pin = newPinHash;
-    saveState('users');
+    saveState();
     showToast('PIN criado com sucesso.');
   } else {
     const storedIsHashed = isPinHashed(user.pin);
@@ -1140,17 +1054,14 @@ async function loginOrRegister(name, pin) {
     // Migrate plain text OR old hash (no salt) to new hash with userId salt
     if (!storedIsHashed || user.pin === oldPinHash) {
       user.pin = newPinHash;
-      saveState('users');
+      saveState();
     }
   }
 
   session.user = user;
-  const firebaseUid = getFirebaseUid();
-  user.firebaseUid = firebaseUid;
-  saveState('users');
   saveSession(user);
   el('logoutBtn').classList.remove('hidden');
-  navigate('round');
+  navigate('dashboard');
   showToast(`Bem-vindo, ${user.name}.`);
   return true;
 }
@@ -1167,93 +1078,67 @@ function renderSidebarUser() {
   el('sidebarUserName').textContent = user ? user.name : 'Visitante';
   el('sidebarUserMeta').textContent = user ? (user.isAdmin ? 'Administrador' : 'Participante') : 'Faça login para apostar';
   el('adminNavBtn').classList.toggle('hidden', !user?.isAdmin);
+  el('iaNavBtn')?.classList.toggle('hidden', !user);
 }
 
 function renderHome() {
-  const user = currentUser();
   const round = getCurrentRound();
-
-  // Toggle guest vs logged-in sections
-  el('homeGuest').classList.toggle('hidden', !!user);
-  el('homeUser').classList.toggle('hidden', !user);
-
-  // ── Render next match info (both states have their own element) ──
-  const matchHTML = round ? `
+  el('homeNextMatch').innerHTML = round ? `
     <p><strong>Cruzeiro x ${round.opponent}</strong></p>
     <p>${round.competition}</p>
     <p>${formatDateTime(round.matchTime)}</p>
     <p class="highlight">${roundStateLabel(round)}</p>
-    ${effectiveRoundState(round) === 'open' ? (() => {
-      const missing = getMissingBettors(round);
-      return missing.length
-        ? `<p class="highlight">⚠️ Faltam: ${missing.map(u => u.name).join(', ')}</p>`
-        : `<p class="highlight">✅ Todos já apostaram</p>`;
-    })() : ''}
-  ` : '<p class="muted">Nenhuma rodada disponível.</p>';
+  ` : '<p>Nenhuma rodada disponível.</p>';
 
-  // Guest state
-  if (!user) {
-    renderLoginOptions();
-    updateLoginHint();
-    const nm = el('homeNextMatch');
-    if (nm) nm.innerHTML = matchHTML;
-
-    const lastFinalized = [...state.rounds]
-      .filter(r => effectiveRoundState(r) === 'finalized' && r.resultCruzeiro !== null)
-      .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
-    const perfectInLast = lastFinalized
-      ? getRoundRanking(lastFinalized).filter(r => r.type === 'exato').map(r => r.name)
-      : [];
-    const lhc = el('lastHighlightCard');
-    if (lhc) lhc.innerHTML = `
-      ${perfectInLast.length ? `<p style="color:var(--gold);font-weight:700">🏆 Rodada perfeita: ${formatNames(perfectInLast)}!</p>` : ''}
-      <p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>
-    `;
-
-    const upcoming = [...state.rounds]
-      .filter(r => effectiveRoundState(r) === 'upcoming')
-      .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
-    const upcomingPanel = el('homeUpcomingPanel');
-    if (upcomingPanel) {
-      upcomingPanel.classList.toggle('hidden', !upcoming.length);
-      const upcomingWrap = el('homeUpcomingRounds');
-      if (upcomingWrap) upcomingWrap.innerHTML = upcoming.map(r => `
-        <div style="padding:8px 0;border-bottom:1px solid var(--line);">
-          <p style="margin:0"><strong>Cruzeiro x ${r.opponent}</strong></p>
-          <p style="margin:2px 0;font-size:.85rem;color:var(--text-2)">${r.competition} — ${formatDateTime(r.matchTime)}</p>
-        </div>
-      `).join('');
-    }
-    return;
+  if (round && effectiveRoundState(round) === 'open') {
+    const missing = getMissingBettors(round);
+    el('homeNextMatch').innerHTML += missing.length
+      ? `<p class="highlight">⚠️ Apostadores em falta: ${missing.map(u => u.name).join(', ')}</p>`
+      : `<p class="highlight">✅ Todos já apostaram nesta rodada</p>`;
   }
 
-  // Logged-in state
-  const userRanking = calculateRankings().find(x => x.name === user.name);
-  const nmLogged = el('homeNextMatchLogged');
-  if (nmLogged) nmLogged.innerHTML = matchHTML;
+  // Check for perfect round in the last finalized round
+  const lastFinalized = [...state.rounds]
+    .filter(r => effectiveRoundState(r) === 'finalized' && r.resultCruzeiro !== null)
+    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
+  const perfectInLast = lastFinalized
+    ? getRoundRanking(lastFinalized).filter(r => r.type === 'exato').map(r => r.name)
+    : [];
 
-  const lhcLogged = el('lastHighlightCardLogged');
-  if (lhcLogged) lhcLogged.innerHTML = `<p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>`;
+  el('lastHighlightCard').innerHTML = `
+    ${perfectInLast.length ? `<p style="color:var(--gold);font-weight:700">🏆 Rodada perfeita: ${formatNames(perfectInLast)} acertou${perfectInLast.length > 1 ? 'ram' : ''} o placar exacto!</p>` : ''}
+    <p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>
+    <p class="muted">Destaques e ranking são atualizados automaticamente quando o resultado é lançado.</p>
+  `;
 
-  const welcome = el('homeUserWelcome');
-  if (welcome && userRanking) {
-    const bet = round ? getBet(round.id, user.name) : null;
-    const betStatus = round && effectiveRoundState(round) === 'open'
-      ? (bet
-          ? `<p style="color:var(--green)">✅ Apostaste ${bet.cruzeiroGoals}x${bet.opponentGoals}</p>`
-          : `<p style="color:var(--yellow)">⚠️ Ainda não apostaste nesta rodada! <button class="btn btn-primary" style="padding:6px 12px;font-size:.85rem;margin-top:6px;" onclick="navigate('round')">Apostar agora</button></p>`)
-      : '';
-    welcome.innerHTML = `
-      <h2 style="margin:8px 0 4px;font-size:1.6rem;font-weight:900;letter-spacing:-0.02em">${user.name} 👋</h2>
-      <p class="muted" style="margin:0 0 12px">${user.isAdmin ? 'Administrador' : 'Participante'}</p>
-      <div style="display:flex;gap:18px;flex-wrap:wrap;margin-bottom:12px;">
-        <div><span class="mini-label">Posição</span><div style="font-size:1.4rem;font-weight:800">${userRanking.position}º</div></div>
-        <div><span class="mini-label">Pontos</span><div style="font-size:1.4rem;font-weight:800">${userRanking.totalPoints}</div></div>
-        <div><span class="mini-label">Exatos</span><div style="font-size:1.4rem;font-weight:800">${userRanking.exact}</div></div>
-        <div><span class="mini-label">Parciais</span><div style="font-size:1.4rem;font-weight:800">${userRanking.partial}</div></div>
+  // Upcoming panel — all rounds in upcoming state, sorted by matchTime.
+  // Exclude a round only if it is already shown as the active round in homeNextMatch
+  // AND its state is open/closed/result (not upcoming).
+  const currentRound = getCurrentRound();
+  const currentIsActive = currentRound && ['open', 'closed', 'result'].includes(effectiveRoundState(currentRound));
+  const upcoming = [...state.rounds]
+    .filter(r => {
+      const s = effectiveRoundState(r);
+      if (s !== 'upcoming') return false;            // only show upcoming rounds here
+      if (currentIsActive && r.id === currentRound.id) return false; // already shown as active
+      return true;
+    })
+    .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
+
+  const upcomingPanel = el('homeUpcomingPanel');
+  const upcomingWrap  = el('homeUpcomingRounds');
+
+  if (!upcoming.length) {
+    upcomingPanel.classList.add('hidden');
+  } else {
+    upcomingPanel.classList.remove('hidden');
+    upcomingWrap.innerHTML = upcoming.map(r => `
+      <div style="padding:8px 0;border-bottom:1px solid var(--line);">
+        <p style="margin:0"><strong>Cruzeiro x ${r.opponent}</strong></p>
+        <p style="margin:2px 0;font-size:.85rem;color:var(--text-2)">${r.competition} — ${formatDateTime(r.matchTime)}</p>
+        <p style="margin:2px 0" class="highlight" style="font-size:.82rem">${roundStateLabel(r)}</p>
       </div>
-      ${betStatus}
-    `;
+    `).join('') + (upcoming.length === 0 ? '<p class="muted">Sem rodadas agendadas.</p>' : '');
   }
 }
 
@@ -1298,38 +1183,20 @@ function renderDashboard() {
   el('betCruzeiro').value = bet?.cruzeiroGoals ?? '';
   el('betOpponent').value = bet?.opponentGoals ?? '';
 
-  // Atualizar labels com o nome real do adversário e jogo
-  const betTitle = el('betFormTitle');
-  const betOpponentLabel = el('betOpponentLabel');
-  if (betTitle) betTitle.textContent = `Fazer aposta — Cruzeiro x ${round.opponent}`;
-  if (betOpponentLabel) betOpponentLabel.firstChild.textContent = round.opponent;
-
   const disabled = stateNow !== 'open';
   Array.from(el('betForm').querySelectorAll('input, button')).forEach(node => node.disabled = disabled);
 
   if (bet) {
     el('betConfirmation').classList.remove('hidden');
-    el('betConfirmation').innerHTML = `<strong>Palpite registado:</strong> ${bet.cruzeiroGoals}x${bet.opponentGoals}<br><span class="muted">Última gravação: ${formatDateTime(bet.updatedAt)}</span>`;
+    el('betConfirmation').innerHTML = `<strong>Palpite registrado:</strong> ${bet.cruzeiroGoals}x${bet.opponentGoals}<br><span class="muted">Última gravação: ${formatDateTime(bet.updatedAt)}</span>`;
   } else {
     el('betConfirmation').classList.add('hidden');
   }
 
- const history = getUserHistory(user.name).slice(-5).reverse();
-el('quickHistory').innerHTML = history.length
-  ? `<ul>${history.map(item => {
-      let lineText = '';
-
-      if (item.betLabel === 'Sem palpite' || item.betLabel === '-') {
-        lineText = `${item.title}, sem palpite`;
-      } else if (item.pointsLabel === '-') {
-        lineText = `${item.title}, ${item.betLabel}, aguardando resultado`;
-      } else {
-        lineText = `${item.title}, ${item.betLabel}, ${item.pointsLabel}`;
-      }
-
-      return `<li>${lineText}</li>`;
-    }).join('')}</ul>`
-  : '<p class="muted">Ainda não há histórico deste jogador.</p>';
+  const history = getUserHistory(user.name).slice(-5).reverse();
+  el('quickHistory').innerHTML = history.length
+    ? `<ul>${history.map(item => `<li>${item.title}, ${item.betLabel}, ${item.pointsLabel}</li>`).join('')}</ul>`
+    : '<p class="muted">Ainda não há histórico deste jogador.</p>';
 }
 
 function renderRanking() {
@@ -1381,36 +1248,8 @@ function renderRanking() {
   );
 }
 
-function renderRoundViewSelect() {
-  const select = el('roundViewSelect');
-  if (!select) return;
-
-  // Ordenar rodadas da mais recente para a mais antiga
-  const sorted = [...state.rounds].sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime));
-
-  // Guardar seleção atual se já existir
-  const current = select.value;
-
-  select.innerHTML = sorted.map(r => {
-    const label = `${r.title} — Cruzeiro x ${r.opponent}`;
-    return `<option value="${r.id}">${label}</option>`;
-  }).join('');
-
-  // Restaurar seleção ou usar rodada atual por defeito
-  if (current && sorted.find(r => r.id === current)) {
-    select.value = current;
-  } else {
-    const defaultRound = getCurrentRound();
-    if (defaultRound) select.value = defaultRound.id;
-  }
-}
-
 function renderRound() {
-  renderRoundViewSelect();
-
-  const select = el('roundViewSelect');
-  const selectedId = select?.value;
-  const round = selectedId ? state.rounds.find(r => r.id === selectedId) : getCurrentRound();
+  const round = getCurrentRound();
 
   if (!round) {
     el('roundSummary').innerHTML = '<p>Nenhuma rodada disponível.</p>';
@@ -1418,14 +1257,13 @@ function renderRound() {
     return;
   }
 
- const hasResult =
-  Number.isInteger(round.resultCruzeiro) &&
-  Number.isInteger(round.resultOpponent);
-  const resultText = hasResult ? `${round.resultCruzeiro}x${round.resultOpponent}` : 'Ainda não lançado';
+  const resultText = round.resultCruzeiro !== null && round.resultOpponent !== null
+    ? `${round.resultCruzeiro}x${round.resultOpponent}`
+    : 'Ainda não lançado';
 
   const roundRanking = getRoundRanking(round);
 
-  // Aposta mais popular
+  // Most popular bet
   const allBets = getBetsArray().filter(b => b.roundId === round.id);
   const betCounts = {};
   allBets.forEach(b => {
@@ -1437,7 +1275,9 @@ function renderRound() {
     ? `${popularBet[0]} (${popularBet[1]} aposta${popularBet[1] > 1 ? 's' : ''})`
     : '—';
 
-  // Winner label — só após resultado
+  const hasResult = round.resultCruzeiro !== null && round.resultOpponent !== null;
+
+  // Winner label — only shown after result is known
   const winner = hasResult && roundRanking.length ? roundWinnerLabel(roundRanking) : null;
   const winnerText = !winner
     ? ''
@@ -1445,10 +1285,10 @@ function renderRound() {
       ? '<p><strong>Jogador(es) da rodada:</strong> <span class="muted">Ninguém pontuou</span></p>'
       : `<p><strong>Jogador(es) da rodada:</strong> <span class="highlight">${winner.text}</span></p>`;
 
-  // Rodada perfeita — só após resultado
+  // Rodada perfeita — only shown after result is known
   const perfectPlayers = hasResult ? roundRanking.filter(r => r.type === 'exato').map(r => r.name) : [];
   const perfectText = perfectPlayers.length
-    ? `<p>🏆 <strong>Rodada perfeita:</strong> <span class="highlight" style="color:var(--gold)">${formatNames(perfectPlayers)} acertou${perfectPlayers.length > 1 ? 'ram' : ''} o placar exato!</span></p>`
+    ? `<p>🏆 <strong>Rodada perfeita:</strong> <span class="highlight" style="color:var(--gold)">${formatNames(perfectPlayers)} acertou${perfectPlayers.length > 1 ? 'ram' : ''} o placar exacto!</span></p>`
     : '';
 
   el('roundSummary').innerHTML = `
@@ -1458,7 +1298,7 @@ function renderRound() {
     <p><strong>Competição:</strong> ${round.competition}</p>
     <p><strong>Estado:</strong> ${roundStateLabel(round)}</p>
     <p><strong>Fecho:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
-    <p><strong>Resultado real:</strong> ${resultText}</p>
+    <p><strong>Resultado real:</strong> ${hasResult ? resultText : 'A definir'}</p>
     <p><strong>Aposta mais popular:</strong> ${popularBetText}</p>
     ${winnerText}
     ${perfectText}
@@ -1469,17 +1309,19 @@ function renderRound() {
     const score = bet && hasResult
       ? scorePrediction(bet.cruzeiroGoals, bet.opponentGoals, round.resultCruzeiro, round.resultOpponent)
       : null;
+
     const noBetWithResult = !bet && hasResult;
 
     return [
       user.name,
-      bet             ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
-      noBetWithResult ? '0'               : (score ? String(score.points) : '—'),
-      noBetWithResult ? badge('sem aposta') : (score ? badge(score.type)  : '—')
+      bet              ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (noBetWithResult ? 'Sem palpite' : '—'),
+      noBetWithResult  ? '0'                 : (score ? String(score.points) : '—'),
+      noBetWithResult  ? badge('sem aposta') : (score ? badge(score.type)    : '—')
     ];
   });
 
   el('roundTableWrap').innerHTML = tableHTML(['Nome', 'Aposta', 'Pontos', 'Tipo de acerto'], rows);
+
 }
 
 // Called only when state changes (result saved, round finalized).
@@ -1524,7 +1366,7 @@ function renderHistory() {
       Total acumulado: ${ranking.totalPoints} pontos<br>
       Exatos: ${ranking.exact}, Parciais: ${ranking.partial}<br>
       Perfil de apostador: ${profile}
-      ${ranking.roundScores.length ? `<br>Sequência actual: ${currentStreak(ranking.roundScores)}` : ''}
+      ${ranking.roundScores.length ? `<br>Sequência atual: ${currentStreak(ranking.roundScores)}` : ''}
     </div>
   ` : '';
 
@@ -1544,193 +1386,22 @@ function renderHistory() {
 
 function renderStats() {
   const stats = getStatsSummary();
-  const ranking = calculateRankings();
-
-  // Split stats: first 9 are global metrics, rest are player profiles
-  const globalStats = stats.slice(0, 9);
-  const profileStats = stats.slice(9);
-
-  // Build ranking evolution data — compare basePoints vs totalPoints
-  const evolutionData = [...ranking]
-    .sort((a, b) => b.totalPoints - a.totalPoints)
-    .map(u => ({
-      name: u.name,
-      base: u.basePoints,
-      earned: u.totalPoints - u.basePoints,
-      total: u.totalPoints
-    }));
-
-  // Build accuracy breakdown (exato / parcial / erro) per player
-  const accuracyData = ranking.map(u => ({
-    name: u.name,
-    exact: u.exact,
-    partial: u.partial,
-    zero: u.zeroRounds,
-    missed: u.missedRounds
-  }));
-
-  const wrap = el('statsGrid');
-  wrap.innerHTML = `
-    <div class="stats-section-full">
-      <div class="stats-kicker">Métricas gerais</div>
-      <div class="stats-global-grid">
-        ${globalStats.map(item => `
-          <article class="stat-card">
-            <div class="label">${item.label}</div>
-            <div class="value">${item.value}</div>
-          </article>
-        `).join('')}
-      </div>
-    </div>
-
-    <div class="stats-section-full">
-      <div class="stats-kicker">Pontuação acumulada por jogador</div>
-      <div class="stats-chart-wrap">
-        <canvas id="chartPoints" height="260"></canvas>
-      </div>
-    </div>
-
-    <div class="stats-section-full">
-      <div class="stats-kicker">Acertos por jogador (exatos · parciais · zeros · sem palpite)</div>
-      <div class="stats-chart-wrap">
-        <canvas id="chartAccuracy" height="260"></canvas>
-      </div>
-    </div>
-
-    <div class="stats-section-full">
-      <div class="stats-kicker">Perfis dos apostadores</div>
-      <div class="stats-profiles-grid">
-        ${profileStats.map(item => `
-          <article class="stat-card">
-            <div class="label">${item.label.replace('Perfil — ', '')}</div>
-            <div class="value" style="font-size:1rem">${item.value}</div>
-          </article>
-        `).join('')}
-      </div>
-    </div>
-  `;
-
-  // Render charts after DOM is updated
-  requestAnimationFrame(() => {
-    const isDark = true;
-    const gridColor = 'rgba(169,184,212,0.1)';
-    const textColor = '#A9B8D4';
-    const font = { family: 'Inter, system-ui, sans-serif', size: 12 };
-
-    Chart.defaults.color = textColor;
-    Chart.defaults.font = font;
-
-    // ── Chart 1: Pontuação acumulada (stacked bar: base + earned) ──
-    const ctx1 = document.getElementById('chartPoints')?.getContext('2d');
-    if (ctx1) {
-      if (window._chartPoints) window._chartPoints.destroy();
-      window._chartPoints = new Chart(ctx1, {
-        type: 'bar',
-        data: {
-          labels: evolutionData.map(d => d.name),
-          datasets: [
-            {
-              label: 'Pontos base',
-              data: evolutionData.map(d => d.base),
-              backgroundColor: 'rgba(59,130,246,0.45)',
-              borderColor: 'rgba(59,130,246,0.9)',
-              borderWidth: 1,
-              borderRadius: 4,
-              borderSkipped: false
-            },
-            {
-              label: 'Pontos ganhos nas rodadas',
-              data: evolutionData.map(d => d.earned),
-              backgroundColor: 'rgba(57,217,138,0.55)',
-              borderColor: 'rgba(57,217,138,0.9)',
-              borderWidth: 1,
-              borderRadius: 4,
-              borderSkipped: false
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { color: textColor, font, boxWidth: 14, padding: 16 } },
-            tooltip: {
-              callbacks: {
-                footer: (items) => {
-                  const total = items.reduce((s, i) => s + i.raw, 0);
-                  return `Total: ${total} pts`;
-                }
-              }
-            }
-          },
-          scales: {
-            x: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font } },
-            y: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font }, beginAtZero: true }
-          }
-        }
-      });
-    }
-
-    // ── Chart 2: Acertos por jogador (stacked horizontal) ──
-    const ctx2 = document.getElementById('chartAccuracy')?.getContext('2d');
-    if (ctx2) {
-      if (window._chartAccuracy) window._chartAccuracy.destroy();
-      window._chartAccuracy = new Chart(ctx2, {
-        type: 'bar',
-        data: {
-          labels: accuracyData.map(d => d.name),
-          datasets: [
-            {
-              label: 'Exatos (3 pts)',
-              data: accuracyData.map(d => d.exact),
-              backgroundColor: 'rgba(57,217,138,0.7)',
-              borderColor: 'rgba(57,217,138,1)',
-              borderWidth: 1,
-              borderRadius: 3
-            },
-            {
-              label: 'Parciais (1 pt)',
-              data: accuracyData.map(d => d.partial),
-              backgroundColor: 'rgba(255,215,107,0.7)',
-              borderColor: 'rgba(255,215,107,1)',
-              borderWidth: 1,
-              borderRadius: 3
-            },
-            {
-              label: 'Zeros (apostou e errou)',
-              data: accuracyData.map(d => d.zero),
-              backgroundColor: 'rgba(255,125,125,0.5)',
-              borderColor: 'rgba(255,125,125,0.9)',
-              borderWidth: 1,
-              borderRadius: 3
-            },
-            {
-              label: 'Sem palpite',
-              data: accuracyData.map(d => d.missed),
-              backgroundColor: 'rgba(107,124,163,0.4)',
-              borderColor: 'rgba(107,124,163,0.8)',
-              borderWidth: 1,
-              borderRadius: 3
-            }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { position: 'top', labels: { color: textColor, font, boxWidth: 14, padding: 16 } }
-          },
-          scales: {
-            x: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font } },
-            y: { stacked: true, grid: { color: gridColor }, ticks: { color: textColor, font, stepSize: 1 }, beginAtZero: true }
-          }
-        }
-      });
-    }
-  });
+  el('statsGrid').innerHTML = stats.map(item => `
+    <article class="stat-card">
+      <div class="label">${item.label}</div>
+      <div class="value">${item.value}</div>
+    </article>
+  `).join('');
 }
 
 
+function renderIA() {
+  // Apenas usuários logados
+  if (!currentUser()) {
+    navigate('login');
+    return;
+  }
+}
 
 
 function addPlayer({ name, phone, basePoints }) {
@@ -1751,7 +1422,7 @@ function addPlayer({ name, phone, basePoints }) {
   };
   state.users.push(newUser);
   state.initialRankingSnapshot.push({ name, points: newUser.basePoints });
-  saveState('users');
+  saveState();
   showToast(`${name} adicionado com sucesso.`);
   return true;
 }
@@ -1763,7 +1434,7 @@ function removePlayer(userId) {
   if (!confirm(`Remover "${user.name}"? As apostas deste jogador serão mantidas no histórico.`)) return;
   state.users = state.users.filter(u => u.id !== userId);
   state.initialRankingSnapshot = state.initialRankingSnapshot.filter(s => s.name !== user.name);
-  saveState('users');
+  saveState();
   renderAdmin();
   showToast(`${user.name} removido.`);
 }
@@ -1834,7 +1505,7 @@ function renderAdmin() {
     uidWrap.innerHTML = uid
       ? `<span class="sidebar-user-label">O teu UID Firebase</span>
          <code style="word-break:break-all;font-size:.82rem;color:var(--accent-soft)">${uid}</code>
-         <span class="muted" style="font-size:.78rem">Partilha este valor com o Ivo para ficares registado como admin.</span>`
+         <span class="muted" style="font-size:.78rem">Partilha este valor com o Ivo para ficares registrado como admin.</span>`
       : `<span class="muted" style="font-size:.78rem">UID não disponível (modo local).</span>`;
   }
 }
@@ -1960,19 +1631,22 @@ function quickState(stateName) {
   round.manualState = stateName;
   round.updatedAt = new Date().toISOString();
   updateRoundHighlight(round);
-  saveState('admin');
+  saveState();
   renderAll(currentRoute);
   showToast(`Rodada definida como ${roundStateLabel(round)}.`);
 }
 
 function updatePageMeta(route) {
   const titles = {
-    home:    ['Bolão do Cruzeiro Debates', 'Organização, competição e identidade forte do Cruzeiro.'],
-    round:   ['Rodada', 'Aposta, countdown e detalhes da rodada atual.'],
-    ranking: ['Ranking & Estatísticas', 'Classificação geral, destaques e métricas do bolão.'],
+    home: ['Bolão do Cruzeiro Debates', 'Organização, competição e identidade forte do Cruzeiro.'],
+    login: ['Entrar', 'Acesso simples com nome e PIN.'],
+    dashboard: ['Dashboard', 'Visão rápida da rodada e do seu desempenho.'],
+    ranking: ['Ranking', 'Classificação geral, rodada e consistência.'],
+    round: ['Rodada', 'Transparência total da rodada atual.'],
     history: ['Histórico', 'Todos os palpites, resultados e pontos.'],
-    admin:   ['Painel admin', 'Gestão completa das rodadas e resultados.'],
-    print:   ['Modo printável', 'Versão limpa para screenshot, impressão ou PDF.']
+    stats: ['Estatísticas', 'Indicadores gerais do bolão.'],
+    admin: ['Painel admin', 'Gestão completa das rodadas e resultados.'],
+    print: ['Modo printável', 'Versão limpa para screenshot, impressão ou PDF.']
   };
 
   el('pageTitle').textContent = titles[route][0];
@@ -1993,12 +1667,15 @@ function navigate(route) {
 // Always-rendered (sidebar, logout btn, page meta) run unconditionally.
 const ROUTE_RENDERS = {
   home:      ['renderHome'],
-  round:     ['renderDashboard', 'renderRound'],
+  login:     ['renderLoginOptions', 'updateLoginHint'],
+  dashboard: ['renderLoginOptions', 'updateLoginHint', 'renderDashboard'],
   ranking:   ['renderRanking'],
+  round:     ['renderRound'],
   history:   ['renderHistory'],
   stats:     ['renderStats'],
   admin:     ['renderAdmin'],
-  print:     ['renderCurrentPrint']
+  ia:        ['renderIA'],
+  print:     ['renderCurrentPrint']  // consistent with the rest of the routing system
 };
 
 // Thin wrapper so renderPrint (which takes printMode) fits the ROUTE_RENDERS
@@ -2020,7 +1697,7 @@ function renderAll(route) {
   const fn_map = {
     renderHome, renderLoginOptions, updateLoginHint, renderDashboard,
     renderRanking, renderRound, renderHistory, renderStats, renderAdmin,
-    renderCurrentPrint
+    renderIA, renderCurrentPrint
   };
   (ROUTE_RENDERS[target] || []).forEach(fnName => {
     if (fn_map[fnName]) fn_map[fnName]();
@@ -2036,26 +1713,6 @@ function setupEvents() {
   el('shareRoundBtn').addEventListener('click', openWhatsAppShare);
   el('openWhatsBtn').addEventListener('click', openWhatsAppShare);
   el('missingBetsBtn')?.addEventListener('click', openMissingBetsWhatsApp);
-
-  // Tab switching — works for any .tab-bar inside the active view
-  document.addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-btn');
-    if (!btn) return;
-    const bar = btn.closest('.tab-bar');
-    if (!bar) return;
-    const view = btn.closest('.view') || btn.closest('.tab-bar')?.parentElement;
-    bar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const targetId = btn.dataset.tab;
-    // Find all tab-panes that are siblings of this tab-bar
-    const container = bar.parentElement;
-    container.querySelectorAll('.tab-pane').forEach(pane => {
-      pane.classList.toggle('hidden', pane.id !== targetId);
-      pane.classList.toggle('active', pane.id === targetId);
-    });
-    // Trigger stats render when stats tab is clicked
-    if (targetId === 'tab-stats') renderStats();
-  });
 
   el('loginName').addEventListener('change', updateLoginHint);
   el('loginForm').addEventListener('submit', async (e) => {
@@ -2087,11 +1744,10 @@ function setupEvents() {
       opponentGoals: Number(el('betOpponent').value)
     });
 
-    renderAll('round');
+    renderAll('dashboard');
   });
 
   el('historyPlayerSelect').addEventListener('change', renderHistory);
-  el('roundViewSelect')?.addEventListener('change', renderRound);
   el('roundSelect').addEventListener('change', (e) => populateRoundForm(e.target.value));
 
   el('roundForm').addEventListener('submit', (e) => {
@@ -2118,6 +1774,7 @@ function setupEvents() {
     const manualStateVal = el('roundManualState').value;
 
     if (deadlineMs < Date.now() && manualStateVal === 'auto') {
+      // Warn but don't block — admin may be editing a past round
       showToast('Aviso: o prazo de apostas já passou.');
     }
 
@@ -2131,13 +1788,15 @@ function setupEvents() {
     round.resultOpponent = el('resultOpponent').value === '' ? null : Number(el('resultOpponent').value);
     round.updatedAt      = new Date().toISOString();
 
-    updateRoundHighlight(round);
-    saveState('admin');
+    updateRoundHighlight(round); // pass edited round explicitly, not getCurrentRound()
+    saveState();
     renderAll('admin');
     showToast('Rodada guardada.');
   });
 
   el('newRoundBtn').addEventListener('click', () => {
+    // Get today's date parts in app timezone, then compose target strings directly.
+    // No manual UTC offset arithmetic — toLocalInputInAppTime handles the conversion.
     const todayParts = getZonedParts(new Date(), APP_TIMEZONE);
     const targetDate = new Date(Date.UTC(
       Number(todayParts.year),
@@ -2148,6 +1807,7 @@ function setupEvents() {
     const mm   = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
     const dd   = String(targetDate.getUTCDate()).padStart(2, '0');
 
+    // Build strings in app-timezone format, then round-trip through parseAppDateTime
     const matchTime = toLocalInputInAppTime(new Date(parseAppDateTime(`${yyyy}-${mm}-${dd}T20:00`)));
     const deadline  = toLocalInputInAppTime(new Date(parseAppDateTime(`${yyyy}-${mm}-${dd}T19:30`)));
 
@@ -2166,7 +1826,7 @@ function setupEvents() {
     };
 
     state.rounds.unshift(round);
-    saveState('admin');
+    saveState();
     renderAdmin();
     el('roundSelect').value = round.id;
     populateRoundForm(round.id);
@@ -2192,7 +1852,7 @@ function setupEvents() {
   el('closeRoundBtn').addEventListener('click', () => quickState('closed'));
   el('finalizeRoundBtn').addEventListener('click', () => quickState('finalized'));
   el('recalcBtn').addEventListener('click', () => {
-    saveState('admin');
+    saveState();
     renderAll(currentRoute);
     showToast('Ranking recalculado.');
   });
@@ -2208,12 +1868,12 @@ function setupEvents() {
 
   el('printRankingBtn').addEventListener('click', () => {
     printMode = 'ranking';
-    navigate('print');
+    navigate('print');  // renderCurrentPrint() is called by ROUTE_RENDERS inside navigate()
   });
 
   el('printRoundBtn').addEventListener('click', () => {
     printMode = 'round';
-    navigate('print');
+    navigate('print');  // renderCurrentPrint() is called by ROUTE_RENDERS inside navigate()
   });
 
   el('triggerPrintBtn').addEventListener('click', () => window.print());
@@ -2221,13 +1881,14 @@ function setupEvents() {
   el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
   el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
   el('aiWhatsBtn')?.addEventListener('click', aiGenerateWhatsApp);
+  el('iaNavBtn')?.addEventListener('click', () => navigate('ia'));
 }
 
 async function init() {
-  await initializeDataSource();
+  await initializeDataSource(); // restoreSession() called inside for both local and Firebase paths
   setupEvents();
   el('logoutBtn').classList.toggle('hidden', !session.user);
-  renderAll(session.user ? 'round' : 'home');
+  renderAll(session.user ? 'dashboard' : 'home');
 }
 
 init();
