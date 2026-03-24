@@ -147,7 +147,7 @@
               <span class="mini-label">Resultado</span>
               <h3>Resposta da IA</h3>
               <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;min-height:180px;"></div>
-              <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clica num dos botões acima para gerar conteúdo.</div>
+              <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clique em um dos botões acima para gerar conteúdo.</div>
               <div class="inline-actions" style="margin-top:14px;">
                 <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
                 <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
@@ -199,7 +199,10 @@
                     <h3 id="betFormTitle">Fazer aposta</h3>
                   </div>
                 </div>
-                <form id="betForm" class="form-stack compact">
+                <div id="betMissingBanner" class="hidden" style="margin-bottom:14px;padding:12px 16px;border-radius:14px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);color:#fbbf24;font-weight:600;font-size:.92rem;">
+                ⚠️ Você ainda não apostou nesta rodada! Salve seu palpite antes do prazo.
+              </div>
+              <form id="betForm" class="form-stack compact">
                   <div class="score-grid">
                     <label>
                       Cruzeiro
@@ -211,7 +214,7 @@
                       <input id="betOpponent" type="number" min="0" max="20" required />
                     </label>
                   </div>
-                  <button class="btn btn-primary" type="submit">Guardar aposta</button>
+                  <button class="btn btn-primary" type="submit">Salvar aposta</button>
                 </form>
                 <div id="betConfirmation" class="notice hidden"></div>
               </article>
@@ -234,7 +237,7 @@
               <div class="inline-actions">
                 <select id="roundViewSelect" style="padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.05);color:var(--text);border:1px solid rgba(255,255,255,.1);min-width:200px;"></select>
                 <button class="btn btn-ghost" id="shareRoundBtn">WhatsApp</button>
-                <button class="btn btn-ghost" id="printRoundBtn">Versão printável</button>
+                <button class="btn btn-ghost" id="printRoundBtn">Versão para impressão</button>
               </div>
             </div>
             <article class="panel" id="roundSummary"></article>
@@ -251,7 +254,7 @@
             </div>
             <div class="inline-actions">
               <button class="btn btn-ghost" id="shareRankingBtn">WhatsApp</button>
-              <button class="btn btn-ghost" id="printRankingBtn">Versão printável</button>
+              <button class="btn btn-ghost" id="printRankingBtn">Versão para impressão</button>
             </div>
           </div>
 
@@ -311,7 +314,7 @@
           <div class="section-head">
             <div>
               <h2>Painel admin</h2>
-              <p class="muted">Gestão rápida das rodadas, resultados e partilha.</p>
+              <p class="muted">Gestão rápida das rodadas, resultados e compartilhamento.</p>
             </div>
           </div>
 
@@ -368,7 +371,7 @@
                       <input id="resultOpponent" type="number" min="0" max="20" />
                     </label>
                   </div>
-                  <button class="btn btn-primary" type="submit">Guardar rodada</button>
+                  <button class="btn btn-primary" type="submit">Salvar rodada</button>
                 </form>
               </article>
 
@@ -434,7 +437,7 @@
         <section class="view" id="view-print">
           <div class="print-toolbar">
             <button class="btn btn-secondary" data-route="ranking">Voltar</button>
-            <button class="btn btn-primary" id="triggerPrintBtn">Imprimir / Guardar PDF</button>
+            <button class="btn btn-primary" id="triggerPrintBtn">Imprimir / Salvar PDF</button>
           </div>
           <article class="print-sheet panel" id="printSheet"></article>
         </section>
