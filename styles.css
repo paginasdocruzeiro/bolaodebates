@@ -495,3 +495,15 @@ select option:hover {
   color: #0b2348;
   background: #dbe8ff;
 }
+/* ── Countdown urgente ── */
+@keyframes pulse-urgent {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+.countdown-urgent {
+  color: var(--red) !important;
+  animation: pulse-urgent 1s ease-in-out infinite;
+}
+
+/* ── Avatar inline nas tabelas ── */
+td:has(.avatar-initial) { white-space: nowrap; }
