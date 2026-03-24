@@ -1314,10 +1314,22 @@ function renderDashboard() {
     el('betConfirmation').classList.add('hidden');
   }
 
-  const history = getUserHistory(user.name).slice(-5).reverse();
-  el('quickHistory').innerHTML = history.length
-    ? `<ul>${history.map(item => `<li>${item.title}, ${item.betLabel}, ${item.pointsLabel}</li>`).join('')}</ul>`
-    : '<p class="muted">Ainda não há histórico deste jogador.</p>';
+ const history = getUserHistory(user.name).slice(-5).reverse();
+el('quickHistory').innerHTML = history.length
+  ? `<ul>${history.map(item => {
+      let lineText = '';
+
+      if (item.betLabel === 'Sem palpite' || item.betLabel === '-') {
+        lineText = `${item.title}, sem palpite`;
+      } else if (item.pointsLabel === '-') {
+        lineText = `${item.title}, ${item.betLabel}, aguardando resultado`;
+      } else {
+        lineText = `${item.title}, ${item.betLabel}, ${item.pointsLabel}`;
+      }
+
+      return `<li>${lineText}</li>`;
+    }).join('')}</ul>`
+  : '<p class="muted">Ainda não há histórico deste jogador.</p>';
 }
 
 function renderRanking() {
