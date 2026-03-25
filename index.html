@@ -297,6 +297,7 @@
               <h2>Histórico</h2>
               <p class="muted">Resultados, palpites e pontos por jogador.</p>
             </div>
+            <button class="btn btn-ghost" id="exportHistoryPdfBtn">📄 Exportar PDF</button>
           </div>
           <article class="panel">
             <div class="filter-row">
@@ -321,6 +322,15 @@
           <article class="panel hidden" id="adminGuard"></article>
 
           <div id="adminContent" class="hidden">
+
+            <div class="tab-bar" id="adminTabBar">
+              <button class="tab-btn active" data-tab="tab-admin-rounds">⚽ Rodadas</button>
+              <button class="tab-btn" data-tab="tab-admin-players">👥 Participantes</button>
+              <button class="tab-btn" data-tab="tab-admin-history">📋 Histórico</button>
+              <button class="tab-btn" data-tab="tab-admin-chat">💬 Chat</button>
+            </div>
+
+            <div id="tab-admin-rounds" class="tab-pane">
             <div class="section-grid two-col">
               <article class="panel">
                 <span class="mini-label">Rodadas</span>
@@ -404,7 +414,11 @@
               </article>
             </div>
 
-            <article class="panel" style="margin-top:18px;">
+            </div><!-- /section-grid -->
+            </div><!-- /tab-admin-rounds -->
+
+            <div id="tab-admin-players" class="tab-pane hidden">
+            <article class="panel">
               <span class="mini-label">Participantes</span>
               <h3>Gerir participantes</h3>
               <div class="section-grid two-col" style="margin-bottom:18px;">
@@ -428,11 +442,47 @@
                 </div>
               </div>
             </article>
+            </div><!-- /tab-admin-players -->
 
+            <div id="tab-admin-history" class="tab-pane hidden">
+              <article class="panel">
+                <span class="mini-label">Histórico de rodadas</span>
+                <h3>Todas as rodadas</h3>
+                <div id="adminRoundsHistoryWrap"></div>
+              </article>
+            </div><!-- /tab-admin-history -->
+
+            <div id="tab-admin-chat" class="tab-pane hidden">
+              <article class="panel">
+                <span class="mini-label">Chat</span>
+                <h3>💬 Chat do grupo</h3>
+                <div id="chatMessagesWrap" style="height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0;margin-bottom:14px;"></div>
+                <div style="display:flex;gap:10px;">
+                  <input id="chatInput" type="text" placeholder="Escreva uma mensagem..." style="flex:1;" maxlength="280" />
+                  <button class="btn btn-primary" id="chatSendBtn" style="white-space:nowrap;">Enviar</button>
+                </div>
+              </article>
+            </div><!-- /tab-admin-chat -->
 
           </div>
         </section>
 
+
+        <section class="view" id="view-chat">
+          <div class="section-head">
+            <div>
+              <h2>💬 Chat do grupo</h2>
+              <p class="muted">Conversa em tempo real entre os participantes.</p>
+            </div>
+          </div>
+          <article class="panel">
+            <div id="chatMessagesWrapMain" style="height:420px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0;margin-bottom:14px;"></div>
+            <div style="display:flex;gap:10px;">
+              <input id="chatInputMain" type="text" placeholder="Escreva uma mensagem..." style="flex:1;" maxlength="280" />
+              <button class="btn btn-primary" id="chatSendBtnMain" style="white-space:nowrap;">Enviar</button>
+            </div>
+          </article>
+        </section>
 
         <section class="view" id="view-print">
           <div class="print-toolbar">
