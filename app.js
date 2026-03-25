@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'bolaoCruzeiroDebates.local.v4';
+vconst STORAGE_KEY = 'bolaoCruzeiroDebates.local.v4';
 const SESSION_KEY = 'bolaoCruzeiroDebates.session';
 
 async function hashPin(pin, userId = '') {
@@ -849,6 +849,74 @@ async function loadGeminiKey() {
 }
 
 // ── Football Data API ─────────────────────────────────────────
+
+// ── Escudos dos clubes ────────────────────────────────────────────
+const CRUZEIRO_CREST = 'https://crests.football-data.org/1625.png';
+
+const BRASILEIRAO_CRESTS = {
+  'Cruzeiro': 'https://crests.football-data.org/1625.png',
+  'Flamengo': 'https://crests.football-data.org/327.png',
+  'Palmeiras': 'https://crests.football-data.org/1963.png',
+  'São Paulo': 'https://crests.football-data.org/323.png',
+  'Corinthians': 'https://crests.football-data.org/1062.png',
+  'Botafogo': 'https://crests.football-data.org/325.png',
+  'Fluminense': 'https://crests.football-data.org/330.png',
+  'Atletico Mineiro': 'https://crests.football-data.org/1977.png',
+  'Atlético Mineiro': 'https://crests.football-data.org/1977.png',
+  'Grêmio': 'https://crests.football-data.org/398.png',
+  'Gremio': 'https://crests.football-data.org/398.png',
+  'Internacional': 'https://crests.football-data.org/394.png',
+  'Santos': 'https://crests.football-data.org/332.png',
+  'Vasco': 'https://crests.football-data.org/336.png',
+  'Vasco da Gama': 'https://crests.football-data.org/336.png',
+  'Bahia': 'https://crests.football-data.org/1864.png',
+  'Fortaleza': 'https://crests.football-data.org/7603.png',
+  'Athletico Paranaense': 'https://crests.football-data.org/1074.png',
+  'Athletico': 'https://crests.football-data.org/1074.png',
+  'Vitória': 'https://crests.football-data.org/1845.png',
+  'Mirassol': 'https://crests.football-data.org/7647.png',
+  'Juventude': 'https://crests.football-data.org/7602.png',
+  'Ceará': 'https://crests.football-data.org/4757.png',
+  'Sport': 'https://crests.football-data.org/1842.png',
+  'Goiás': 'https://crests.football-data.org/4759.png',
+  'Coritiba': 'https://crests.football-data.org/4758.png',
+  'RB Bragantino': 'https://crests.football-data.org/7596.png',
+  'Bragantino': 'https://crests.football-data.org/7596.png',
+  'Cuiabá': 'https://crests.football-data.org/7642.png',
+  'América Mineiro': 'https://crests.football-data.org/4755.png',
+  'America Mineiro': 'https://crests.football-data.org/4755.png',
+};
+
+// Cache de escudos buscados pela API
+const crestCache = {};
+
+async function getOpponentCrest(opponentName) {
+  // 1. Cache
+  if (crestCache[opponentName]) return crestCache[opponentName];
+  // 2. Lista manual
+  const manual = BRASILEIRAO_CRESTS[opponentName];
+  if (manual) { crestCache[opponentName] = manual; return manual; }
+  // 3. Busca pela API
+  try {
+    const data = await fetchFootballData(`teams?name=${encodeURIComponent(opponentName)}`);
+    const team = data?.teams?.[0];
+    if (team?.crest) {
+      crestCache[opponentName] = team.crest;
+      return team.crest;
+    }
+  } catch {}
+  // 4. Fallback genérico — escudo padrão de futebol
+  return null;
+}
+
+function crestImgHTML(url, name, size = 32) {
+  if (!url) {
+    // Fallback: emoji de escudo com inicial
+    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;border-radius:6px;background:rgba(255,255,255,.08);font-size:${size*0.5}px;">⚽</span>`;
+  }
+  return `<img src="${url}" alt="${name}" style="width:${size}px;height:${size}px;object-fit:contain;border-radius:6px;vertical-align:middle;" onerror="this.style.display='none'">`;
+}
+
 const CRUZEIRO_ID = 1625; // ID do Cruzeiro na football-data.org
 const BRASILEIRAO_ID = 2013; // ID da Série A
 
@@ -863,6 +931,36 @@ async function fetchFootballData(endpoint) {
     return await res.json();
   } catch {
     return null;
+  }
+}
+
+
+async function renderMatchHeader(containerId, round, extraHTML = '') {
+  const el_ = document.getElementById(containerId);
+  if (!el_) return;
+
+  // Renderizar primeiro sem escudo
+  el_.innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="crest-cruzeiro-${containerId}">${crestImgHTML(CRUZEIRO_CREST, 'Cruzeiro', 36)}</span>
+        <strong style="font-size:1.05rem;">Cruzeiro</strong>
+      </div>
+      <span style="color:var(--text-3);font-weight:700;font-size:1.1rem;">×</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="crest-opp-${containerId}">⚽</span>
+        <strong style="font-size:1.05rem;">${round.opponent}</strong>
+      </div>
+    </div>
+    <p style="margin:6px 0 0;color:var(--text-2);font-size:.88rem;">${round.competition}</p>
+    ${extraHTML}
+  `;
+
+  // Buscar escudo do adversário assincronamente
+  const oppCrest = await getOpponentCrest(round.opponent);
+  const oppEl = document.getElementById(`crest-opp-${containerId}`);
+  if (oppEl && oppCrest) {
+    oppEl.innerHTML = crestImgHTML(oppCrest, round.opponent, 36);
   }
 }
 
@@ -1200,25 +1298,26 @@ function renderHome() {
   el('homeUser').classList.toggle('hidden', !user);
 
   // ── Render next match info (both states have their own element) ──
-  const matchHTML = round ? `
-    <p><strong>Cruzeiro x ${round.opponent}</strong></p>
-    <p>${round.competition}</p>
-    <p>${formatDateTime(round.matchTime)}</p>
-    <p class="highlight">${roundStateLabel(round)}</p>
+  const matchExtraHTML = round ? `
+    <p style="margin:4px 0 0;">${formatDateTime(round.matchTime)}</p>
+    <p class="highlight" style="margin:4px 0 0;">${roundStateLabel(round)}</p>
     ${effectiveRoundState(round) === 'open' ? (() => {
       const missing = getMissingBettors(round);
       return missing.length
-        ? `<p class="highlight">⚠️ Faltam: ${missing.map(u => u.name).join(', ')}</p>`
-        : `<p class="highlight">✅ Todos já apostaram</p>`;
+        ? `<p class="highlight" style="margin:4px 0 0;">⚠️ Faltam: ${missing.map(u => u.name).join(', ')}</p>`
+        : `<p class="highlight" style="margin:4px 0 0;">✅ Todos já apostaram</p>`;
     })() : ''}
-  ` : '<p class="muted">Nenhuma rodada disponível.</p>';
+  ` : '';
 
   // Guest state
   if (!user) {
     renderLoginOptions();
     updateLoginHint();
     const nm = el('homeNextMatch');
-    if (nm) nm.innerHTML = matchHTML;
+    if (nm) {
+      if (round) renderMatchHeader('homeNextMatch', round, matchExtraHTML);
+      else nm.innerHTML = '<p class="muted">Nenhuma rodada disponível.</p>';
+    }
 
     const lastFinalized = [...state.rounds]
       .filter(r => effectiveRoundState(r) === 'finalized' && r.resultCruzeiro !== null)
@@ -1252,7 +1351,10 @@ function renderHome() {
   // Logged-in state
   const userRanking = calculateRankings().find(x => x.name === user.name);
   const nmLogged = el('homeNextMatchLogged');
-  if (nmLogged) nmLogged.innerHTML = matchHTML;
+  if (nmLogged) {
+    if (round) renderMatchHeader('homeNextMatchLogged', round, matchExtraHTML);
+    else nmLogged.innerHTML = '<p class="muted">Nenhuma rodada disponível.</p>';
+  }
 
   const lhcLogged = el('lastHighlightCardLogged');
   if (lhcLogged) lhcLogged.innerHTML = `<p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>`;
@@ -1316,13 +1418,12 @@ function renderDashboard() {
       </div>
     </div>` : '';
 
-  el('dashboardNextMatch').innerHTML = `
-    <p><strong>Cruzeiro x ${round.opponent}</strong></p>
-    <p>${round.competition}</p>
-    <p><strong>Jogo:</strong> ${formatDateTime(round.matchTime)}</p>
-    <p><strong>Prazo:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
+  const dashboardExtra = `
+    <p style="margin:6px 0 2px;"><strong>Jogo:</strong> ${formatDateTime(round.matchTime)}</p>
+    <p style="margin:0 0 2px;"><strong>Prazo:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
     ${progressBar}
   `;
+  renderMatchHeader('dashboardNextMatch', round, dashboardExtra);
 
   el('userPerformanceCard').innerHTML = userRanking ? `
     <p><strong>Posição atual:</strong> ${userRanking.position}º</p>
