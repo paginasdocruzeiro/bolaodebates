@@ -507,3 +507,10 @@ select option:hover {
 
 /* ── Avatar inline nas tabelas ── */
 td:has(.avatar-initial) { white-space: nowrap; }
+/* ── Chat ── */
+#chatMessagesWrap::-webkit-scrollbar,
+#chatMessagesWrapMain::-webkit-scrollbar { width: 4px; }
+#chatMessagesWrap::-webkit-scrollbar-track,
+#chatMessagesWrapMain::-webkit-scrollbar-track { background: transparent; }
+#chatMessagesWrap::-webkit-scrollbar-thumb,
+#chatMessagesWrapMain::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
