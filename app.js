@@ -856,6 +856,7 @@ const CRUZEIRO_CREST = 'https://www.thesportsdb.com/images/media/team/badge/xsvq
 
 // Mapa de nomes → IDs do TheSportsDB para busca dinâmica
 const THESPORTSDB_IDS = {
+  // Brasileirão
   'Cruzeiro':              133604,
   'Flamengo':              133600,
   'Palmeiras':             133597,
@@ -881,14 +882,62 @@ const THESPORTSDB_IDS = {
   'Chapecoense':           133614,
   'Mirassol':              134975,
   'Remo':                  134194,
+  // Copa do Brasil
   'Goiás':                 133570,
+  // Libertadores
   'Boca Juniors':          132743,
+  'Universidad Católica':  132948,
+  'Universidade Católica': 132948,
+  'Barcelona SC':          132735,
+  'Barcelona de Quito':    132735,
 };
 
 // Atlético Mineiro leva o escudo de cabeça para baixo 😄
 const FLIPPED_CRESTS = ['Atlético Mineiro', 'Atletico Mineiro', 'Atlético-MG'];
 
-// Cache de escudos
+// Cache de escudos em memória
+const _crestCache = {};
+
+// Gera o HTML de uma imagem de escudo, com suporte a flip para o Galo
+function crestImgHTML(url, name, size = 36) {
+  const isFlipped = FLIPPED_CRESTS.some(n => name.toLowerCase().includes(n.toLowerCase()) || (n.toLowerCase().includes(name.toLowerCase()) && name.length > 4));
+  const flipStyle = isFlipped ? 'transform:rotate(180deg);' : '';
+  const title = isFlipped ? `${name} 😄` : name;
+  return `<img src="${url}" alt="${name}" title="${title}" width="${size}" height="${size}" style="object-fit:contain;${flipStyle}" onerror="this.style.display='none'" />`;
+}
+
+// Busca o escudo de um adversário via TheSportsDB (com cache)
+async function getOpponentCrest(opponentName) {
+  if (!opponentName) return null;
+
+  // Verifica cache
+  const cacheKey = opponentName.toLowerCase();
+  if (_crestCache[cacheKey]) return _crestCache[cacheKey];
+
+  // Procura o ID no mapa (procura parcial também)
+  let teamId = null;
+  for (const [key, id] of Object.entries(THESPORTSDB_IDS)) {
+    if (key.toLowerCase() === cacheKey || cacheKey.includes(key.toLowerCase()) || key.toLowerCase().includes(cacheKey)) {
+      teamId = id;
+      break;
+    }
+  }
+
+  if (!teamId) return null;
+
+  try {
+    const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/lookupteam.php?id=${teamId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const badge = data?.teams?.[0]?.strBadge;
+    if (!badge) return null;
+    const url = badge + '/small';
+    _crestCache[cacheKey] = url;
+    return url;
+  } catch {
+    return null;
+  }
+}
 
 // Buscar escudo do Cruzeiro dinamicamente
 (async () => {
