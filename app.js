@@ -851,69 +851,54 @@ async function loadGeminiKey() {
 // ── Football Data API ─────────────────────────────────────────
 
 // ── Escudos dos clubes ────────────────────────────────────────────
-const CRUZEIRO_CREST = 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Cruzeiro_Esporte_Clube_crest.svg/200px-Cruzeiro_Esporte_Clube_crest.svg.png';
+// URLs diretas do TheSportsDB (gratuito, sem CORS, PNG transparente)
+const CRUZEIRO_CREST = 'https://www.thesportsdb.com/images/media/team/badge/xsvqut1421781965.png/small';
 
-const BRASILEIRAO_CRESTS = {
-  // Brasileirão
-  'Cruzeiro':              'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Cruzeiro_Esporte_Clube_crest.svg/200px-Cruzeiro_Esporte_Clube_crest.svg.png',
-  'Flamengo':              'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2e/Flamengo_braz_logo.svg/200px-Flamengo_braz_logo.svg.png',
-  'Palmeiras':             'https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Palmeiras_logo.svg/200px-Palmeiras_logo.svg.png',
-  'São Paulo':             'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Coat_of_arms_of_S%C3%A3o_Paulo_FC.svg/200px-Coat_of_arms_of_S%C3%A3o_Paulo_FC.svg.png',
-  'Corinthians':           'https://upload.wikimedia.org/wikipedia/commons/thumb/8/84/Corinthians_logo.svg/200px-Corinthians_logo.svg.png',
-  'Botafogo':              'https://upload.wikimedia.org/wikipedia/commons/thumb/5/52/Botafogo_de_Futebol_e_Regatas_logo.svg/200px-Botafogo_de_Futebol_e_Regatas_logo.svg.png',
-  'Fluminense':            'https://upload.wikimedia.org/wikipedia/commons/thumb/4/43/Fluminense_fc_logo.svg/200px-Fluminense_fc_logo.svg.png',
-  'Atlético Mineiro':      'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Atletico-mg.svg/200px-Atletico-mg.svg.png',
-  'Atletico Mineiro':      'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Atletico-mg.svg/200px-Atletico-mg.svg.png',
-  'Atlético-MG':           'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Atletico-mg.svg/200px-Atletico-mg.svg.png',
-  'Grêmio':                'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/Gr%C3%AAmio_FBPA.svg/200px-Gr%C3%AAmio_FBPA.svg.png',
-  'Internacional':         'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5d/Sport_Club_Internacional.svg/200px-Sport_Club_Internacional.svg.png',
-  'Santos':                'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/Santos_FC_logo.svg/200px-Santos_FC_logo.svg.png',
-  'Vasco':                 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/CR_Vasco_da_Gama_logo.svg/200px-CR_Vasco_da_Gama_logo.svg.png',
-  'Vasco da Gama':         'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bc/CR_Vasco_da_Gama_logo.svg/200px-CR_Vasco_da_Gama_logo.svg.png',
-  'Bahia':                 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d6/Esporte_Clube_Bahia_logo.svg/200px-Esporte_Clube_Bahia_logo.svg.png',
-  'Vitória':               'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b9/Esporte_Clube_Vit%C3%B3ria_logo.svg/200px-Esporte_Clube_Vit%C3%B3ria_logo.svg.png',
-  'Athletico-PR':          'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Athletico_Paranaense_logo_%282024%29.svg/200px-Athletico_Paranaense_logo_%282024%29.svg.png',
-  'Athletico Paranaense':  'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/Athletico_Paranaense_logo_%282024%29.svg/200px-Athletico_Paranaense_logo_%282024%29.svg.png',
-  'Coritiba':              'https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Coritiba_FBC_logo.svg/200px-Coritiba_FBC_logo.svg.png',
-  'Bragantino':            'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Red_Bull_Bragantino_logo.svg/200px-Red_Bull_Bragantino_logo.svg.png',
-  'RB Bragantino':         'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Red_Bull_Bragantino_logo.svg/200px-Red_Bull_Bragantino_logo.svg.png',
-  'Chapecoense':           'https://upload.wikimedia.org/wikipedia/commons/thumb/c/ca/Chapecoense.svg/200px-Chapecoense.svg.png',
-  'Mirassol':              'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Mirassol_FC.svg/200px-Mirassol_FC.svg.png',
-  'Remo':                  'https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/Club_do_Remo.svg/200px-Club_do_Remo.svg.png',
-  // Copa do Brasil
-  'Goiás':                 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/60/Goias_esporte_clube.svg/200px-Goias_esporte_clube.svg.png',
-  // Libertadores
-  'Boca Juniors':          'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Boca_Juniors_logo_old.svg/200px-Boca_Juniors_logo_old.svg.png',
-  'Universidade Católica': 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Uni_cat_crest.svg/200px-Uni_cat_crest.svg.png',
-  'Barcelona de Quito':    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a6/Barcelona_Sporting_Club_logo.svg/200px-Barcelona_Sporting_Club_logo.svg.png',
+// Mapa de nomes → IDs do TheSportsDB para busca dinâmica
+const THESPORTSDB_IDS = {
+  'Cruzeiro':              133604,
+  'Flamengo':              133600,
+  'Palmeiras':             133597,
+  'São Paulo':             133596,
+  'Corinthians':           133561,
+  'Botafogo':              133568,
+  'Fluminense':            133605,
+  'Atlético Mineiro':      133564,
+  'Atletico Mineiro':      133564,
+  'Atlético-MG':           133564,
+  'Grêmio':                133599,
+  'Internacional':         133563,
+  'Santos':                133567,
+  'Vasco':                 133601,
+  'Vasco da Gama':         133601,
+  'Bahia':                 133572,
+  'Vitória':               133609,
+  'Athletico-PR':          133560,
+  'Athletico Paranaense':  133560,
+  'Coritiba':              133606,
+  'Bragantino':            134424,
+  'RB Bragantino':         134424,
+  'Chapecoense':           133614,
+  'Mirassol':              134975,
+  'Remo':                  134194,
+  'Goiás':                 133570,
+  'Boca Juniors':          132743,
 };
 
 // Atlético Mineiro leva o escudo de cabeça para baixo 😄
 const FLIPPED_CRESTS = ['Atlético Mineiro', 'Atletico Mineiro', 'Atlético-MG'];
 
-// Cache de escudos buscados pela API
-const crestCache = {};
+// Cache de escudos
 
-async function getOpponentCrest(opponentName) {
-  if (crestCache[opponentName] !== undefined) return crestCache[opponentName];
-  // Lista manual — fonte primária
-  const manual = BRASILEIRAO_CRESTS[opponentName];
-  if (manual) { crestCache[opponentName] = manual; return manual; }
-  // Fallback: null (mostra ⚽)
-  crestCache[opponentName] = null;
-  return null;
-}
-
-function crestImgHTML(url, name, size = 32) {
-  if (!url) {
-    return `<span style="display:inline-flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;border-radius:6px;background:rgba(255,255,255,.08);font-size:${Math.round(size*0.5)}px;">⚽</span>`;
-  }
-  // 😄 Atlético Mineiro leva o escudo de cabeça para baixo
-  const flipped = typeof FLIPPED_CRESTS !== 'undefined' && FLIPPED_CRESTS.includes(name);
-  const transform = flipped ? 'transform:rotate(180deg);' : '';
-  const title = flipped ? ' title="É de cabeça para baixo mesmo 😄"' : '';
-  return `<img src="${url}" alt="${name}"${title} style="width:${size}px;height:${size}px;object-fit:contain;border-radius:6px;vertical-align:middle;${transform}" onerror="this.style.display='none'">`;
-}
+// Buscar escudo do Cruzeiro dinamicamente
+(async () => {
+  try {
+    const res = await fetch('https://www.thesportsdb.com/api/v1/json/123/lookupteam.php?id=133604');
+    const data = await res.json();
+    const badge = data?.teams?.[0]?.strBadge;
+    if (badge) window._cruzeiroCrest = badge + '/small';
+  } catch {}
+})();
 
 const CRUZEIRO_ID = 1625; // ID do Cruzeiro na football-data.org
 const BRASILEIRAO_ID = 2013; // ID da Série A
@@ -941,7 +926,7 @@ function renderMatchHeader(containerId, round, extraHTML = '') {
   el_.innerHTML = `
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:10px;">
-        ${crestImgHTML(CRUZEIRO_CREST, 'Cruzeiro', 36)}
+        ${crestImgHTML(window._cruzeiroCrest || CRUZEIRO_CREST, 'Cruzeiro', 36)}
         <strong style="font-size:1.05rem;">Cruzeiro</strong>
       </div>
       <span style="color:var(--text-3);font-weight:700;font-size:1.1rem;">×</span>
