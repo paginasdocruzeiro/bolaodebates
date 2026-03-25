@@ -1,4 +1,4 @@
-vconst STORAGE_KEY = 'bolaoCruzeiroDebates.local.v4';
+const STORAGE_KEY = 'bolaoCruzeiroDebates.local.v4';
 const SESSION_KEY = 'bolaoCruzeiroDebates.session';
 
 async function hashPin(pin, userId = '') {
@@ -935,20 +935,20 @@ async function fetchFootballData(endpoint) {
 }
 
 
-async function renderMatchHeader(containerId, round, extraHTML = '') {
+function renderMatchHeader(containerId, round, extraHTML = '') {
   const el_ = document.getElementById(containerId);
   if (!el_) return;
 
-  // Renderizar primeiro sem escudo
+  // Renderizar imediatamente com escudo do Cruzeiro e placeholder do adversário
   el_.innerHTML = `
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:10px;">
-        <span id="crest-cruzeiro-${containerId}">${crestImgHTML(CRUZEIRO_CREST, 'Cruzeiro', 36)}</span>
+        ${crestImgHTML(CRUZEIRO_CREST, 'Cruzeiro', 36)}
         <strong style="font-size:1.05rem;">Cruzeiro</strong>
       </div>
       <span style="color:var(--text-3);font-weight:700;font-size:1.1rem;">×</span>
       <div style="display:flex;align-items:center;gap:10px;">
-        <span id="crest-opp-${containerId}">⚽</span>
+        <span id="crest-opp-${containerId}" style="width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;">⚽</span>
         <strong style="font-size:1.05rem;">${round.opponent}</strong>
       </div>
     </div>
@@ -956,12 +956,12 @@ async function renderMatchHeader(containerId, round, extraHTML = '') {
     ${extraHTML}
   `;
 
-  // Buscar escudo do adversário assincronamente
-  const oppCrest = await getOpponentCrest(round.opponent);
-  const oppEl = document.getElementById(`crest-opp-${containerId}`);
-  if (oppEl && oppCrest) {
-    oppEl.innerHTML = crestImgHTML(oppCrest, round.opponent, 36);
-  }
+  // Buscar escudo do adversário de forma não-bloqueante
+  getOpponentCrest(round.opponent).then(oppCrest => {
+    if (!oppCrest) return;
+    const oppEl = document.getElementById(`crest-opp-${containerId}`);
+    if (oppEl) oppEl.innerHTML = crestImgHTML(oppCrest, round.opponent, 36);
+  }).catch(() => {});
 }
 
 async function getCruzeiroContext() {
