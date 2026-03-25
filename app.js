@@ -854,87 +854,115 @@ async function loadGeminiKey() {
 // URLs diretas do TheSportsDB (gratuito, sem CORS, PNG transparente)
 const CRUZEIRO_CREST = 'https://www.thesportsdb.com/images/media/team/badge/xsvqut1421781965.png/small';
 
-// Mapa de nomes → IDs do TheSportsDB para busca dinâmica
-const THESPORTSDB_IDS = {
+// Mapa de nomes normalizados → termo de pesquisa exato para TheSportsDB searchteams
+// Usamos pesquisa por nome em vez de ID para evitar IDs trocados entre times
+const THESPORTSDB_SEARCH = {
   // Brasileirão
-  'Cruzeiro':              133604,
-  'Flamengo':              133600,
-  'Palmeiras':             133597,
-  'São Paulo':             133596,
-  'Corinthians':           133561,
-  'Botafogo':              133568,
-  'Fluminense':            133605,
-  'Atlético Mineiro':      133564,
-  'Atletico Mineiro':      133564,
-  'Atlético-MG':           133564,
-  'Grêmio':                133599,
-  'Internacional':         133563,
-  'Santos':                133567,
-  'Vasco':                 133601,
-  'Vasco da Gama':         133601,
-  'Bahia':                 133572,
-  'Vitória':               133609,
-  'Athletico-PR':          133560,
-  'Athletico Paranaense':  133560,
-  'Coritiba':              133606,
-  'Bragantino':            134424,
-  'RB Bragantino':         134424,
-  'Chapecoense':           133614,
-  'Mirassol':              134975,
-  'Remo':                  134194,
+  'cruzeiro':             'Cruzeiro',
+  'flamengo':             'Flamengo',
+  'palmeiras':            'Palmeiras',
+  'sao paulo':            'Sao Paulo',
+  'são paulo':            'Sao Paulo',
+  'corinthians':          'Corinthians',
+  'botafogo':             'Botafogo',
+  'fluminense':           'Fluminense',
+  'atletico mineiro':     'Atletico Mineiro',
+  'atlético mineiro':     'Atletico Mineiro',
+  'atletico-mg':          'Atletico Mineiro',
+  'atlético-mg':          'Atletico Mineiro',
+  'gremio':               'Gremio',
+  'grêmio':               'Gremio',
+  'internacional':        'Internacional',
+  'santos':               'Santos',
+  'vasco':                'Vasco da Gama',
+  'vasco da gama':        'Vasco da Gama',
+  'bahia':                'Bahia',
+  'vitoria':              'Vitoria',
+  'vitória':              'Vitoria',
+  'athletico-pr':         'Athletico Paranaense',
+  'athletico paranaense': 'Athletico Paranaense',
+  'coritiba':             'Coritiba',
+  'bragantino':           'Bragantino',
+  'rb bragantino':        'Bragantino',
+  'red bull bragantino':  'Bragantino',
+  'chapecoense':          'Chapecoense',
+  'mirassol':             'Mirassol',
+  'remo':                 'Clube do Remo',
   // Copa do Brasil
-  'Goiás':                 133570,
+  'goias':                'Goias',
+  'goiás':                'Goias',
   // Libertadores
-  'Boca Juniors':          132743,
-  'Universidad Católica':  132948,
-  'Universidade Católica': 132948,
-  'Barcelona SC':          132735,
-  'Barcelona de Quito':    132735,
+  'boca juniors':         'Boca Juniors',
+  'universidad catolica': 'Universidad Catolica',
+  'universidad católica': 'Universidad Catolica',
+  'universidade catolica':'Universidad Catolica',
+  'universidade católica':'Universidad Catolica',
+  'barcelona sc':         'Barcelona SC',
+  'barcelona de quito':   'Barcelona SC',
+  'barcelona quito':      'Barcelona SC',
 };
 
 // Atlético Mineiro leva o escudo de cabeça para baixo 😄
-const FLIPPED_CRESTS = ['Atlético Mineiro', 'Atletico Mineiro', 'Atlético-MG'];
+const FLIPPED_CRESTS = ['atletico mineiro', 'atlético mineiro', 'atletico-mg', 'atlético-mg'];
 
 // Cache de escudos em memória
 const _crestCache = {};
 
 // Gera o HTML de uma imagem de escudo, com suporte a flip para o Galo
 function crestImgHTML(url, name, size = 36) {
-  const isFlipped = FLIPPED_CRESTS.some(n => name.toLowerCase().includes(n.toLowerCase()) || (n.toLowerCase().includes(name.toLowerCase()) && name.length > 4));
+  const nameLower = (name || '').toLowerCase();
+  const isFlipped = FLIPPED_CRESTS.some(n => nameLower.includes(n) || n.includes(nameLower.replace(/[^a-záéíóúãõâêôç\s]/gi, '')));
   const flipStyle = isFlipped ? 'transform:rotate(180deg);' : '';
   const title = isFlipped ? `${name} 😄` : name;
   return `<img src="${url}" alt="${name}" title="${title}" width="${size}" height="${size}" style="object-fit:contain;${flipStyle}" onerror="this.style.display='none'" />`;
 }
 
-// Busca o escudo de um adversário via TheSportsDB (com cache)
+// Busca o escudo de um adversário via TheSportsDB (pesquisa por nome, com cache)
 async function getOpponentCrest(opponentName) {
   if (!opponentName) return null;
 
-  // Verifica cache
-  const cacheKey = opponentName.toLowerCase();
-  if (_crestCache[cacheKey]) return _crestCache[cacheKey];
+  const nameLower = opponentName.toLowerCase().trim();
 
-  // Procura o ID no mapa (procura parcial também)
-  let teamId = null;
-  for (const [key, id] of Object.entries(THESPORTSDB_IDS)) {
-    if (key.toLowerCase() === cacheKey || cacheKey.includes(key.toLowerCase()) || key.toLowerCase().includes(cacheKey)) {
-      teamId = id;
+  // Verifica cache
+  if (_crestCache[nameLower] !== undefined) return _crestCache[nameLower] || null;
+
+  // Encontra o termo de pesquisa mapeado
+  let searchTerm = null;
+  for (const [key, term] of Object.entries(THESPORTSDB_SEARCH)) {
+    if (nameLower === key || nameLower.includes(key) || key.includes(nameLower)) {
+      searchTerm = term;
       break;
     }
   }
 
-  if (!teamId) return null;
+  if (!searchTerm) {
+    // Tenta pesquisa direta com o nome original
+    searchTerm = opponentName;
+  }
 
   try {
-    const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/lookupteam.php?id=${teamId}`);
-    if (!res.ok) return null;
+    const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(searchTerm)}`);
+    if (!res.ok) { _crestCache[nameLower] = null; return null; }
     const data = await res.json();
-    const badge = data?.teams?.[0]?.strBadge;
-    if (!badge) return null;
+    const teams = data?.teams;
+    if (!teams?.length) { _crestCache[nameLower] = null; return null; }
+
+    // Para times brasileiros, preferir o time do Brasil
+    let team = teams[0];
+    if (teams.length > 1) {
+      const brazilTeam = teams.find(t => t.strCountry === 'Brazil' || t.strCountry === 'Brasil');
+      // Para times argentinos/chilenos/equatorianos, manter o primeiro resultado
+      const isLatinAm = ['boca juniors','universidad','barcelona sc'].includes(searchTerm.toLowerCase());
+      if (brazilTeam && !isLatinAm) team = brazilTeam;
+    }
+
+    const badge = team?.strBadge;
+    if (!badge) { _crestCache[nameLower] = null; return null; }
     const url = badge + '/small';
-    _crestCache[cacheKey] = url;
+    _crestCache[nameLower] = url;
     return url;
   } catch {
+    _crestCache[nameLower] = null;
     return null;
   }
 }
