@@ -852,93 +852,75 @@ async function loadGeminiKey() {
 
 // ── Escudos dos clubes ────────────────────────────────────────────
 // URLs diretas do TheSportsDB (gratuito, sem CORS, PNG transparente)
-const CRUZEIRO_CREST = 'https://www.thesportsdb.com/images/media/team/badge/xsvqut1421781965.png/small';
-
-// Mapa de nomes normalizados → termo de pesquisa exato para TheSportsDB searchteams
-// Usamos pesquisa por nome em vez de ID para evitar IDs trocados entre times
-const THESPORTSDB_SEARCH = {
+// ── Escudos dos clubes ────────────────────────────────────────────
+// Mapa: nome normalizado (lowercase) → { search: termo de pesquisa, country: país preferido }
+// Usamos searchteams por nome para todos — incluindo o Cruzeiro — para evitar IDs desatualizados.
+const CREST_MAP = {
   // Brasileirão
-  'cruzeiro':             'Cruzeiro',
-  'flamengo':             'Flamengo',
-  'palmeiras':            'Palmeiras',
-  'sao paulo':            'Sao Paulo',
-  'são paulo':            'Sao Paulo',
-  'corinthians':          'Corinthians',
-  'botafogo':             'Botafogo',
-  'fluminense':           'Fluminense',
-  'atletico mineiro':     'Atletico Mineiro',
-  'atlético mineiro':     'Atletico Mineiro',
-  'atletico-mg':          'Atletico Mineiro',
-  'atlético-mg':          'Atletico Mineiro',
-  'gremio':               'Gremio',
-  'grêmio':               'Gremio',
-  'internacional':        'Internacional',
-  'santos':               'Santos',
-  'vasco':                'Vasco da Gama',
-  'vasco da gama':        'Vasco da Gama',
-  'bahia':                'Bahia',
-  'vitoria':              'Vitoria',
-  'vitória':              'Vitoria',
-  'athletico-pr':         'Athletico Paranaense',
-  'athletico paranaense': 'Athletico Paranaense',
-  'coritiba':             'Coritiba',
-  'bragantino':           'Bragantino',
-  'rb bragantino':        'Bragantino',
-  'red bull bragantino':  'Bragantino',
-  'chapecoense':          'Chapecoense',
-  'mirassol':             'Mirassol',
-  'remo':                 'Clube do Remo',
+  'cruzeiro':              { search: 'Cruzeiro EC',            country: 'Brazil' },
+  'flamengo':              { search: 'Flamengo',               country: 'Brazil' },
+  'palmeiras':             { search: 'Palmeiras',              country: 'Brazil' },
+  'sao paulo':             { search: 'Sao Paulo',              country: 'Brazil' },
+  'são paulo':             { search: 'Sao Paulo',              country: 'Brazil' },
+  'corinthians':           { search: 'Corinthians',            country: 'Brazil' },
+  'botafogo':              { search: 'Botafogo',               country: 'Brazil' },
+  'fluminense':            { search: 'Fluminense',             country: 'Brazil' },
+  'atletico mineiro':      { search: 'Atletico Mineiro',       country: 'Brazil' },
+  'atlético mineiro':      { search: 'Atletico Mineiro',       country: 'Brazil' },
+  'atletico-mg':           { search: 'Atletico Mineiro',       country: 'Brazil' },
+  'atlético-mg':           { search: 'Atletico Mineiro',       country: 'Brazil' },
+  'gremio':                { search: 'Gremio',                 country: 'Brazil' },
+  'grêmio':                { search: 'Gremio',                 country: 'Brazil' },
+  'internacional':         { search: 'Internacional',          country: 'Brazil' },
+  'santos':                { search: 'Santos',                 country: 'Brazil' },
+  'vasco':                 { search: 'Vasco da Gama',          country: 'Brazil' },
+  'vasco da gama':         { search: 'Vasco da Gama',          country: 'Brazil' },
+  'bahia':                 { search: 'Bahia',                  country: 'Brazil' },
+  'vitoria':               { search: 'Vitoria',                country: 'Brazil' },
+  'vitória':               { search: 'Vitoria',                country: 'Brazil' },
+  'athletico-pr':          { search: 'Athletico Paranaense',   country: 'Brazil' },
+  'athletico paranaense':  { search: 'Athletico Paranaense',   country: 'Brazil' },
+  'coritiba':              { search: 'Coritiba',               country: 'Brazil' },
+  'bragantino':            { search: 'Bragantino',             country: 'Brazil' },
+  'rb bragantino':         { search: 'Bragantino',             country: 'Brazil' },
+  'red bull bragantino':   { search: 'Bragantino',             country: 'Brazil' },
+  'chapecoense':           { search: 'Chapecoense',            country: 'Brazil' },
+  'mirassol':              { search: 'Mirassol',               country: 'Brazil' },
+  'remo':                  { search: 'Clube do Remo',          country: 'Brazil' },
   // Copa do Brasil
-  'goias':                'Goias',
-  'goiás':                'Goias',
+  'goias':                 { search: 'Goias',                  country: 'Brazil' },
+  'goiás':                 { search: 'Goias',                  country: 'Brazil' },
   // Libertadores
-  'boca juniors':         'Boca Juniors',
-  'universidad catolica': 'Universidad Catolica',
-  'universidad católica': 'Universidad Catolica',
-  'universidade catolica':'Universidad Catolica',
-  'universidade católica':'Universidad Catolica',
-  'barcelona sc':         'Barcelona SC',
-  'barcelona de quito':   'Barcelona SC',
-  'barcelona quito':      'Barcelona SC',
+  'boca juniors':          { search: 'Boca Juniors',           country: 'Argentina' },
+  'universidad catolica':  { search: 'Universidad Catolica',   country: 'Chile' },
+  'universidad católica':  { search: 'Universidad Catolica',   country: 'Chile' },
+  'universidade catolica': { search: 'Universidad Catolica',   country: 'Chile' },
+  'universidade católica': { search: 'Universidad Catolica',   country: 'Chile' },
+  'barcelona sc':          { search: 'Barcelona SC',           country: 'Ecuador' },
+  'barcelona de quito':    { search: 'Barcelona SC',           country: 'Ecuador' },
+  'barcelona quito':       { search: 'Barcelona SC',           country: 'Ecuador' },
 };
 
 // Atlético Mineiro leva o escudo de cabeça para baixo 😄
 const FLIPPED_CRESTS = ['atletico mineiro', 'atlético mineiro', 'atletico-mg', 'atlético-mg'];
 
-// Cache de escudos em memória
+// Cache de escudos em memória (inclui Cruzeiro)
 const _crestCache = {};
 
-// Gera o HTML de uma imagem de escudo, com suporte a flip para o Galo
-function crestImgHTML(url, name, size = 36) {
-  const nameLower = (name || '').toLowerCase();
-  const isFlipped = FLIPPED_CRESTS.some(n => nameLower.includes(n) || n.includes(nameLower.replace(/[^a-záéíóúãõâêôç\s]/gi, '')));
-  const flipStyle = isFlipped ? 'transform:rotate(180deg);' : '';
-  const title = isFlipped ? `${name} 😄` : name;
-  return `<img src="${url}" alt="${name}" title="${title}" width="${size}" height="${size}" style="object-fit:contain;${flipStyle}" onerror="this.style.display='none'" />`;
-}
-
-// Busca o escudo de um adversário via TheSportsDB (pesquisa por nome, com cache)
-async function getOpponentCrest(opponentName) {
-  if (!opponentName) return null;
-
-  const nameLower = opponentName.toLowerCase().trim();
-
-  // Verifica cache
+// Função para obter o escudo de qualquer equipa (incluindo Cruzeiro) via searchteams
+async function fetchCrestByName(teamName) {
+  const nameLower = (teamName || '').toLowerCase().trim();
   if (_crestCache[nameLower] !== undefined) return _crestCache[nameLower] || null;
 
-  // Encontra o termo de pesquisa mapeado
-  let searchTerm = null;
-  for (const [key, term] of Object.entries(THESPORTSDB_SEARCH)) {
-    if (nameLower === key || nameLower.includes(key) || key.includes(nameLower)) {
-      searchTerm = term;
-      break;
+  // Encontrar entrada no mapa (exact match primeiro, depois parcial)
+  let entry = CREST_MAP[nameLower];
+  if (!entry) {
+    for (const [key, val] of Object.entries(CREST_MAP)) {
+      if (nameLower.includes(key) || key.includes(nameLower)) { entry = val; break; }
     }
   }
-
-  if (!searchTerm) {
-    // Tenta pesquisa direta com o nome original
-    searchTerm = opponentName;
-  }
+  const searchTerm = entry?.search || teamName;
+  const preferredCountry = entry?.country || null;
 
   try {
     const res = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${encodeURIComponent(searchTerm)}`);
@@ -947,13 +929,11 @@ async function getOpponentCrest(opponentName) {
     const teams = data?.teams;
     if (!teams?.length) { _crestCache[nameLower] = null; return null; }
 
-    // Para times brasileiros, preferir o time do Brasil
+    // Preferir time do país correto quando há múltiplos resultados
     let team = teams[0];
-    if (teams.length > 1) {
-      const brazilTeam = teams.find(t => t.strCountry === 'Brazil' || t.strCountry === 'Brasil');
-      // Para times argentinos/chilenos/equatorianos, manter o primeiro resultado
-      const isLatinAm = ['boca juniors','universidad','barcelona sc'].includes(searchTerm.toLowerCase());
-      if (brazilTeam && !isLatinAm) team = brazilTeam;
+    if (teams.length > 1 && preferredCountry) {
+      const match = teams.find(t => t.strCountry === preferredCountry);
+      if (match) team = match;
     }
 
     const badge = team?.strBadge;
@@ -967,14 +947,23 @@ async function getOpponentCrest(opponentName) {
   }
 }
 
-// Buscar escudo do Cruzeiro dinamicamente
+// Alias usado no renderMatchHeader para adversários
+const getOpponentCrest = fetchCrestByName;
+
+// Gera o HTML de uma imagem de escudo, com suporte a flip para o Galo
+function crestImgHTML(url, name, size = 36) {
+  const nameLower = (name || '').toLowerCase();
+  const isFlipped = FLIPPED_CRESTS.some(n => nameLower.includes(n));
+  const flipStyle = isFlipped ? 'transform:rotate(180deg);' : '';
+  const title = isFlipped ? `${name} 😄` : name;
+  return `<img src="${url}" alt="${name}" title="${title}" width="${size}" height="${size}" style="object-fit:contain;${flipStyle}" onerror="this.style.display='none'" />`;
+}
+
+// Pré-carregar escudo do Cruzeiro ao iniciar (fica em cache para renderMatchHeader)
+const CRUZEIRO_CREST_FALLBACK = 'https://www.thesportsdb.com/images/media/team/badge/xsvqut1421781965.png/small';
 (async () => {
-  try {
-    const res = await fetch('https://www.thesportsdb.com/api/v1/json/123/lookupteam.php?id=133604');
-    const data = await res.json();
-    const badge = data?.teams?.[0]?.strBadge;
-    if (badge) window._cruzeiroCrest = badge + '/small';
-  } catch {}
+  const crest = await fetchCrestByName('cruzeiro');
+  window._cruzeiroCrest = crest || CRUZEIRO_CREST_FALLBACK;
 })();
 
 const CRUZEIRO_ID = 1625; // ID do Cruzeiro na football-data.org
@@ -1003,7 +992,7 @@ function renderMatchHeader(containerId, round, extraHTML = '') {
   el_.innerHTML = `
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
       <div style="display:flex;align-items:center;gap:10px;">
-        ${crestImgHTML(window._cruzeiroCrest || CRUZEIRO_CREST, 'Cruzeiro', 36)}
+        ${crestImgHTML(window._cruzeiroCrest || CRUZEIRO_CREST_FALLBACK, 'Cruzeiro', 36)}
         <strong style="font-size:1.05rem;">Cruzeiro</strong>
       </div>
       <span style="color:var(--text-3);font-weight:700;font-size:1.1rem;">×</span>
