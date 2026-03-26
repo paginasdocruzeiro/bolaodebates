@@ -54,8 +54,8 @@
           </div>
         </div>
         <div class="topbar-actions">
-          <button class="btn btn-ghost" id="shareTopBtn">WhatsApp</button>
-          <button class="btn btn-ghost hidden" id="logoutBtn">Sair</button>
+          <button class="ios-btn ios-btn-green" id="shareTopBtn">📲 WhatsApp</button>
+          <button class="ios-btn ios-btn-gray hidden" id="logoutBtn">Sair</button>
         </div>
       </header>
 
@@ -144,19 +144,19 @@
                 <span class="mini-label">Análise</span>
                 <h3>🏆 Análise da rodada</h3>
                 <p class="muted" style="margin-bottom:14px;">Comentário automático do resultado com drama, destaques e provocações.</p>
-                <button class="btn btn-primary" id="aiAnalyzeBtn">🏆 Analisar rodada atual</button>
+                <button class="ios-btn ios-btn-blue" id="aiAnalyzeBtn">🏆 Analisar rodada atual</button>
               </article>
               <article class="panel">
                 <span class="mini-label">Previsão</span>
                 <h3>🔮 Previsão do próximo jogo</h3>
                 <p class="muted" style="margin-bottom:14px;">Com base no histórico de apostas de cada jogador, quem vai acertar?</p>
-                <button class="btn btn-secondary" id="aiPredictBtn">🔮 Gerar previsão</button>
+                <button class="ios-btn ios-btn-purple" id="aiPredictBtn">🔮 Gerar previsão</button>
               </article>
               <article class="panel">
                 <span class="mini-label">WhatsApp</span>
                 <h3>📲 Mensagem criativa</h3>
                 <p class="muted" style="margin-bottom:14px;">Mensagem animada com ranking e hype para enviar no grupo.</p>
-                <button class="btn btn-secondary" id="aiWhatsBtn">📲 Gerar mensagem</button>
+                <button class="ios-btn ios-btn-green" id="aiWhatsBtn">📲 Gerar mensagem</button>
               </article>
             </div>
             <article class="panel" style="margin-bottom:22px;">
@@ -165,8 +165,8 @@
               <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;min-height:180px;"></div>
               <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clique em um dos botões acima para gerar conteúdo.</div>
               <div class="inline-actions" style="margin-top:14px;">
-                <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
-                <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
+                <button class="ios-btn ios-btn-gray hidden" id="aiCopyBtn">📋 Copiar</button>
+                <button class="ios-btn ios-btn-green hidden" id="aiSendWhatsBtn">📲 WhatsApp</button>
               </div>
             </article>
 
@@ -267,8 +267,8 @@
               </div>
               <div class="inline-actions">
                 <select id="roundViewSelect" style="padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.05);color:var(--text);border:1px solid rgba(255,255,255,.1);min-width:200px;"></select>
-                <button class="btn btn-ghost" id="shareRoundBtn">WhatsApp</button>
-                <button class="btn btn-ghost" id="printRoundBtn">Versão para impressão</button>
+                <button class="ios-btn ios-btn-green" id="shareRoundBtn">📲 WhatsApp</button>
+                <button class="ios-btn ios-btn-gray" id="printRoundBtn">🖨 Imprimir</button>
               </div>
             </div>
             <article class="panel" id="roundSummary"></article>
@@ -284,8 +284,8 @@
               <p class="muted">Classificação, destaques e estatísticas do bolão.</p>
             </div>
             <div class="inline-actions">
-              <button class="btn btn-ghost" id="shareRankingBtn">WhatsApp</button>
-              <button class="btn btn-ghost" id="printRankingBtn">Versão para impressão</button>
+              <button class="ios-btn ios-btn-green" id="shareRankingBtn">📲 WhatsApp</button>
+              <button class="ios-btn ios-btn-gray" id="printRankingBtn">🖨 Imprimir</button>
             </div>
           </div>
 
@@ -423,13 +423,13 @@
                   <div id="missingBetsAdminWrap" class="notice"></div>
 
                   <div class="action-grid">
-                    <button class="btn btn-primary" id="newRoundBtn">+ Nova rodada</button>
-                    <button class="btn btn-success" id="openRoundBtn">✅ Abrir apostas</button>
-                    <button class="btn btn-warning" id="closeRoundBtn">🔒 Fechar apostas</button>
-                    <button class="btn btn-danger" id="finalizeRoundBtn">🏁 Finalizar rodada</button>
-                    <button class="btn btn-ghost" id="recalcBtn">↻ Recalcular ranking</button>
-                    <button class="btn btn-ghost" id="generateWhatsBtn">💬 Gerar mensagem WhatsApp</button>
-                    <button class="btn btn-secondary" id="missingBetsBtn">📲 Apostadores em falta</button>
+                    <button class="ios-btn ios-btn-blue"   id="newRoundBtn">＋ Nova rodada</button>
+                    <button class="ios-btn ios-btn-green"  id="openRoundBtn">✅ Abrir apostas</button>
+                    <button class="ios-btn ios-btn-yellow" id="closeRoundBtn">🔒 Fechar apostas</button>
+                    <button class="ios-btn ios-btn-red"    id="finalizeRoundBtn">🏁 Finalizar rodada</button>
+                    <button class="ios-btn ios-btn-gray"   id="recalcBtn">↻ Recalcular ranking</button>
+                    <button class="ios-btn ios-btn-purple" id="generateWhatsBtn">💬 Gerar mensagem WhatsApp</button>
+                    <button class="ios-btn ios-btn-green"  id="missingBetsBtn">📲 Apostadores em falta</button>
                   </div>
 
                   <label>
@@ -437,8 +437,8 @@
                     <textarea id="whatsMessage" rows="18" style="min-height:220px;"></textarea>
                   </label>
                   <div class="inline-actions">
-                    <button class="btn btn-secondary" id="copyWhatsBtn">Copiar mensagem</button>
-                    <button class="btn btn-primary" id="openWhatsBtn">Abrir no WhatsApp</button>
+                    <button class="ios-btn ios-btn-gray"   id="copyWhatsBtn">📋 Copiar mensagem</button>
+                    <button class="ios-btn ios-btn-green"  id="openWhatsBtn">📲 Abrir no WhatsApp</button>
                   </div>
 
                   <div class="notice" id="adminUidDisplay" style="margin-top:12px;display:grid;gap:6px;"></div>
