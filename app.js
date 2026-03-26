@@ -1989,8 +1989,9 @@ function renderPlayersList() {
 // ── Painel "Ao Vivo" — TheSportsDB (gratuita, sem chave, suporta CORS) ──────
 let sofascoreLoading = false;
 
-// ID do Cruzeiro na TheSportsDB
-const THESPORTSDB_TEAM_ID = 134294;
+const THESPORTSDB_TEAM_ID = 134294;   // Cruzeiro
+const THESPORTSDB_LEAGUE_ID = 4335;   // Brazilian Série A
+const THESPORTSDB_CDB_ID = 4336;      // Copa do Brasil
 
 async function renderSofaScore() {
   if (!currentUser()) return;
@@ -2003,24 +2004,41 @@ async function renderSofaScore() {
   panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
   try {
-    // TheSportsDB — API pública, gratuita, sem chave, suporta CORS
-    const [nextRes, lastRes] = await Promise.all([
-      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${THESPORTSDB_TEAM_ID}`),
-      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${THESPORTSDB_TEAM_ID}`)
+    const season = new Date().getFullYear().toString();
+
+    // Busca eventos recentes (last) por team ID — funciona bem na free tier
+    // Busca próximos eventos pela liga e filtra pelo Cruzeiro (mais fiável)
+    const [lastRes, nextLeagueRes, nextCDBRes] = await Promise.all([
+      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${THESPORTSDB_TEAM_ID}`),
+      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=${THESPORTSDB_LEAGUE_ID}`),
+      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=${THESPORTSDB_CDB_ID}`)
     ]);
 
-    const nextData = nextRes.ok ? await nextRes.json() : null;
-    const lastData = lastRes.ok ? await lastRes.json() : null;
+    const lastData      = lastRes.ok      ? await lastRes.json()      : null;
+    const nextLeagueData = nextLeagueRes.ok ? await nextLeagueRes.json() : null;
+    const nextCDBData    = nextCDBRes.ok    ? await nextCDBRes.json()    : null;
 
-    const upcoming = (nextData?.events || []).slice(0, 5);
+    // Resultados recentes do Cruzeiro
     const finished = (lastData?.results || []).slice(0, 5).reverse();
+
+    // Próximos jogos — filtra pelo Cruzeiro em todas as competições
+    const allNext = [
+      ...(nextLeagueData?.events || []),
+      ...(nextCDBData?.events   || [])
+    ].filter(m =>
+      m.idHomeTeam === String(THESPORTSDB_TEAM_ID) ||
+      m.idAwayTeam === String(THESPORTSDB_TEAM_ID) ||
+      (m.strHomeTeam || '').toLowerCase().includes('cruzeiro') ||
+      (m.strAwayTeam || '').toLowerCase().includes('cruzeiro')
+    ).sort((a, b) => new Date(a.dateEvent) - new Date(b.dateEvent))
+     .slice(0, 5);
 
     let html = '';
 
-    if (upcoming.length) {
+    if (allNext.length) {
       html += `<div style="margin-bottom:20px;">
         <div class="mini-label" style="margin-bottom:10px;">Próximos jogos</div>
-        ${upcoming.map(m => matchRowHTMLSportsDB(m, false)).join('')}
+        ${allNext.map(m => matchRowHTMLSportsDB(m, false)).join('')}
       </div>`;
     }
 
