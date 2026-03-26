@@ -1,0 +1,47 @@
+name: Actualizar jogos do Cruzeiro
+
+on:
+  schedule:
+    # Corre a cada hora (UTC) — ajusta conforme necessário
+    - cron: '0 * * * *'
+  workflow_dispatch: # permite correr manualmente no GitHub
+
+jobs:
+  fetch-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Buscar jogos e escrever no Firebase
+        env:
+          FOOTBALL_KEY: ${{ secrets.BOLAO_FOOTBALL_KEY }}
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
+        run: |
+          CRUZEIRO_ID=1625
+          BASE="https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches"
+
+          # Busca jogos finalizados e agendados
+          FINISHED=$(curl -s -H "X-Auth-Token: ${FOOTBALL_KEY}" \
+            "${BASE}?status=FINISHED&limit=5")
+          SCHEDULED=$(curl -s -H "X-Auth-Token: ${FOOTBALL_KEY}" \
+            "${BASE}?status=SCHEDULED,TIMED&limit=5")
+
+          # Combina num único objecto JSON
+          PAYLOAD=$(node -e "
+            const fin  = JSON.parse(process.env.FIN  || '{\"matches\":[]}');
+            const sched = JSON.parse(process.env.SCHED || '{\"matches\":[]}');
+            const out = {
+              finished:  (fin.matches  || []).slice(-5).reverse(),
+              upcoming:  (sched.matches || []).slice(0, 5),
+              updatedAt: new Date().toISOString()
+            };
+            console.log(JSON.stringify(out));
+          " FIN="$FINISHED" SCHED="$SCHEDULED")
+
+          # Escreve no Firebase Realtime Database via REST API
+          DB_PATH="bolao-cruzeiro-debates/matches.json"
+          curl -s -X PUT \
+            -H "Content-Type: application/json" \
+            -d "${PAYLOAD}" \
+            "${FIREBASE_DB_URL}/${DB_PATH}?auth=${FIREBASE_SECRET}"
+
+          echo "✅ Jogos actualizados em ${DB_PATH}"
