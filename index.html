@@ -33,9 +33,6 @@
         <button data-route="ranking" class="menu-item">🏆 Ranking</button>
         <button data-route="history" class="menu-item">📋 Histórico</button>
         <button data-route="admin" class="menu-item hidden" id="adminNavBtn">⚙️ Admin</button>
-        <button data-route="ia" class="menu-item hidden" id="iaNavBtn">✨ IA</button>
-        <button data-route="sofascore" class="menu-item hidden" id="sofascoreNavBtn">⚽ Ao vivo</button>
-        <button data-route="chat" class="menu-item hidden" id="chatNavBtn">💬 Chat</button>
       </nav>
 
       <div class="sidebar-bottom">
@@ -119,6 +116,23 @@
               </div>
             </div>
 
+            <!-- Secção Ao Vivo -->
+            <div class="section-head" style="margin-bottom:16px;">
+              <div>
+                <h2>⚽ Cruzeiro ao vivo</h2>
+                <p class="muted">Resultados, calendário e estatísticas em tempo real via SofaScore.</p>
+              </div>
+            </div>
+            <article class="panel" style="padding:0;overflow:hidden;border-radius:var(--radius);margin-bottom:22px;">
+              <iframe
+                src="https://widgets.sofascore.com/embed/team?id=1954&defaultTab=matches&widgetTheme=dark&lang=pt_BR"
+                style="width:100%;height:500px;border:none;display:block;"
+                title="Cruzeiro — SofaScore"
+                loading="lazy"
+                allowfullscreen>
+              </iframe>
+            </article>
+
             <!-- Secção IA -->
             <div class="section-head" style="margin-bottom:16px;">
               <div>
@@ -146,7 +160,7 @@
                 <button class="btn btn-secondary" id="aiWhatsBtn">📲 Gerar mensagem</button>
               </article>
             </div>
-            <article class="panel">
+            <article class="panel" style="margin-bottom:22px;">
               <span class="mini-label">Resultado</span>
               <h3>Resposta da IA</h3>
               <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;min-height:180px;"></div>
@@ -154,6 +168,21 @@
               <div class="inline-actions" style="margin-top:14px;">
                 <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
                 <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
+              </div>
+            </article>
+
+            <!-- Secção Chat -->
+            <div class="section-head" style="margin-bottom:16px;">
+              <div>
+                <h2>💬 Chat do grupo</h2>
+                <p class="muted">Conversa em tempo real entre os participantes.</p>
+              </div>
+            </div>
+            <article class="panel">
+              <div id="chatMessagesWrapMain" style="height:440px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0 8px;margin-bottom:14px;"></div>
+              <div style="display:flex;gap:10px;align-items:center;">
+                <input id="chatInputMain" type="text" placeholder="Escreva uma mensagem..." style="flex:1;" maxlength="280" />
+                <button class="btn btn-primary" id="chatSendBtnMain" style="white-space:nowrap;padding:12px 20px;">Enviar</button>
               </div>
             </article>
           </div>
@@ -332,7 +361,7 @@
               <button class="tab-btn" data-tab="tab-admin-chat">🔐 Chat Admin</button>
             </div>
 
-            <div id="tab-admin-rounds" class="tab-pane">
+            <div id="tab-admin-rounds" class="tab-pane active">
             <div class="section-grid two-col">
               <article class="panel">
                 <span class="mini-label">Rodadas</span>
@@ -470,79 +499,6 @@
           </div>
         </section>
 
-
-        <section class="view" id="view-ia">
-          <div class="section-head">
-            <div>
-              <h2>✨ IA do Bolão</h2>
-              <p class="muted">Análises, previsões e mensagens geradas pelo Gemini.</p>
-            </div>
-          </div>
-          <div class="section-grid" style="gap:18px;">
-            <article class="panel">
-              <span class="mini-label">Análise</span>
-              <h3>🏆 Análise da rodada</h3>
-              <p class="muted" style="margin-bottom:14px;">Comentário automático do resultado com drama, destaques e provocações.</p>
-              <button class="btn btn-primary" id="aiAnalyzeBtn">🏆 Analisar rodada atual</button>
-            </article>
-            <article class="panel">
-              <span class="mini-label">Previsão</span>
-              <h3>🔮 Previsão do próximo jogo</h3>
-              <p class="muted" style="margin-bottom:14px;">Com base no histórico de apostas de cada jogador, quem vai acertar?</p>
-              <button class="btn btn-secondary" id="aiPredictBtn">🔮 Gerar previsão</button>
-            </article>
-            <article class="panel">
-              <span class="mini-label">WhatsApp</span>
-              <h3>📲 Mensagem criativa</h3>
-              <p class="muted" style="margin-bottom:14px;">Mensagem animada com ranking e hype para enviar no grupo.</p>
-              <button class="btn btn-secondary" id="aiWhatsBtn">📲 Gerar mensagem</button>
-            </article>
-          </div>
-          <article class="panel" style="margin-top:18px;">
-            <span class="mini-label">Resultado</span>
-            <h3>Resposta da IA</h3>
-            <div id="aiOutput" class="notice hidden" style="white-space:pre-wrap;line-height:1.7;font-size:.95rem;min-height:200px;"></div>
-            <div id="aiOutputEmpty" class="muted" style="font-size:.9rem;">Clique em um dos botões acima para gerar conteúdo.</div>
-            <div class="inline-actions" style="margin-top:14px;">
-              <button class="btn btn-ghost hidden" id="aiCopyBtn">Copiar</button>
-              <button class="btn btn-ghost hidden" id="aiSendWhatsBtn">Abrir no WhatsApp</button>
-            </div>
-          </article>
-        </section>
-
-        <section class="view" id="view-sofascore">
-          <div class="section-head">
-            <div>
-              <h2>⚽ Cruzeiro ao vivo</h2>
-              <p class="muted">Resultados, calendário e estatísticas em tempo real via SofaScore.</p>
-            </div>
-          </div>
-          <article class="panel" style="padding:0;overflow:hidden;border-radius:var(--radius);">
-            <iframe
-              src="https://widgets.sofascore.com/embed/team?id=1954&defaultTab=matches&widgetTheme=dark&lang=pt_BR"
-              style="width:100%;height:500px;border:none;display:block;"
-              title="Cruzeiro — SofaScore"
-              loading="lazy"
-              allowfullscreen>
-            </iframe>
-          </article>
-        </section>
-
-        <section class="view" id="view-chat">
-          <div class="section-head">
-            <div>
-              <h2>💬 Chat do grupo</h2>
-              <p class="muted">Conversa em tempo real entre os participantes.</p>
-            </div>
-          </div>
-          <article class="panel">
-            <div id="chatMessagesWrapMain" style="height:440px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px 0 8px;margin-bottom:14px;"></div>
-            <div style="display:flex;gap:10px;align-items:center;">
-              <input id="chatInputMain" type="text" placeholder="Escreva uma mensagem..." style="flex:1;" maxlength="280" />
-              <button class="btn btn-primary" id="chatSendBtnMain" style="white-space:nowrap;padding:12px 20px;">Enviar</button>
-            </div>
-          </article>
-        </section>
 
         <section class="view" id="view-print">
           <div class="print-toolbar">
