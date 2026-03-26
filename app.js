@@ -950,14 +950,21 @@ const BRASILEIRAO_ID = 2013; // ID da Série A
 async function fetchFootballData(endpoint) {
   const key = window.BOLAO_FOOTBALL_KEY;
   if (!key || key === 'cole_o_seu_token_aqui') return null;
-  try {
-    const url = `https://api.football-data.org/v4/${endpoint}`;
-    const res = await fetchWithCorsProxy(url, { 'X-Auth-Token': key });
-    if (!res) return null;
-    return await res.json();
-  } catch {
-    return null;
+  const proxies = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  ];
+  const url = `https://api.football-data.org/v4/${endpoint}`;
+  for (const makeUrl of proxies) {
+    try {
+      const res = await fetch(makeUrl(url), {
+        headers: { 'X-Auth-Token': key },
+        signal: AbortSignal.timeout(7000)
+      });
+      if (res.ok) return await res.json();
+    } catch { /* tenta próximo */ }
   }
+  return null;
 }
 
 
@@ -1291,8 +1298,9 @@ async function loginOrRegister(name, pin) {
   saveState('users');
   saveSession(user);
   el('logoutBtn').classList.remove('hidden');
-  // Inicia o chat logo após login para que as mensagens estejam prontas
-  if (firebaseSyncEnabled && !chatInitialized) initChat();
+  // Inicia/actualiza chat após login — initChat é seguro de chamar múltiplas vezes
+  // Garante que o listener admin é registado se o utilizador for admin
+  if (firebaseSyncEnabled) initChat();
   navigate('round');
   showToast(`Bem-vindo, ${user.name}.`);
   return true;
@@ -1978,26 +1986,8 @@ function renderPlayersList() {
   `;
 }
 
-// ── Painel "Ao Vivo" — jogos do Cruzeiro via football-data.org ──────
+// ── Painel "Ao Vivo" — lê jogos do Firebase (escritos pelo GitHub Actions) ──────
 let sofascoreLoading = false;
-
-async function fetchWithCorsProxy(url, headers = {}) {
-  const proxies = [
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
-  ];
-  for (const makeUrl of proxies) {
-    try {
-      const res = await fetch(makeUrl(url), {
-        headers,
-        signal: AbortSignal.timeout(8000)
-      });
-      if (res.ok) return res;
-    } catch { /* tenta próximo */ }
-  }
-  return null;
-}
 
 async function renderSofaScore() {
   if (!currentUser()) return;
@@ -2007,74 +1997,116 @@ async function renderSofaScore() {
   if (sofascoreLoading) return;
   sofascoreLoading = true;
 
-  const key = window.BOLAO_FOOTBALL_KEY;
-  if (!key || key === 'cole_o_seu_token_aqui') {
-    sofascoreLoading = false;
-    panel.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">🔑 API de futebol não configurada.</p>`;
-    return;
-  }
-
   panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
-  const BASE = `https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches`;
-  const hdrs = { 'X-Auth-Token': key };
-
   try {
-    const [finRes, schedRes] = await Promise.all([
-      fetchWithCorsProxy(`${BASE}?status=FINISHED&limit=5`, hdrs),
-      fetchWithCorsProxy(`${BASE}?status=SCHEDULED,TIMED&limit=5`, hdrs),
-    ]);
+    // Tenta ler do Firebase primeiro (actualizado pelo GitHub Actions sem CORS)
+    let data = null;
 
-    if (!finRes && !schedRes) throw new Error('Todos os proxies falharam.');
+    if (firebaseSyncEnabled && window.firebase) {
+      const snap = await firebase.database()
+        .ref('bolao-cruzeiro-debates/matches')
+        .once('value');
+      data = snap.val();
+    }
 
-    const finData   = finRes   ? await finRes.json()   : null;
-    const schedData = schedRes ? await schedRes.json() : null;
+    // Fallback: tenta proxies CORS se Firebase não tiver dados
+    if (!data || (!data.finished?.length && !data.upcoming?.length)) {
+      const key = window.BOLAO_FOOTBALL_KEY;
+      if (key && key !== 'cole_o_seu_token_aqui') {
+        data = await fetchMatchesFallback(key);
+      }
+    }
 
-    const finished = (finData?.matches   || []).slice(-5).reverse();
-    const upcoming = (schedData?.matches || []).slice(0, 5);
+    if (!data || (!data.finished?.length && !data.upcoming?.length)) {
+      panel.innerHTML = `
+        <p class="muted" style="padding:16px 0 8px;text-align:center;">
+          Sem jogos disponíveis.<br>
+          <span style="font-size:.8rem;opacity:.7;">O GitHub Actions actualiza automaticamente a cada hora.</span>
+        </p>
+        <div style="text-align:center;">
+          <button class="ios-btn ios-btn-gray" style="margin-top:8px;" onclick="reloadSofaScore()">↻ Tentar novamente</button>
+        </div>`;
+      return;
+    }
+
+    // Formata data de actualização
+    const updatedLabel = data.updatedAt
+      ? `<span style="font-size:.74rem;color:var(--text-3);">Actualizado: ${new Date(data.updatedAt).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}</span>`
+      : '';
 
     let html = '';
 
-    if (upcoming.length) {
+    if (data.upcoming?.length) {
       html += `<div style="margin-bottom:20px;">
         <div class="mini-label" style="margin-bottom:10px;">Próximos jogos</div>
-        ${upcoming.map(m => matchRowHTML(m, false)).join('')}
+        ${data.upcoming.map(m => matchRowHTML(m, false)).join('')}
       </div>`;
     }
 
-    if (finished.length) {
+    if (data.finished?.length) {
       html += `<div>
         <div class="mini-label" style="margin-bottom:10px;">Resultados recentes</div>
-        ${finished.map(m => matchRowHTML(m, true)).join('')}
+        ${data.finished.map(m => matchRowHTML(m, true)).join('')}
       </div>`;
     }
 
-    if (!html) html = `<p class="muted" style="padding:24px;text-align:center;">Sem jogos disponíveis.</p>`;
-
-    html += `<div style="text-align:right;margin-top:12px;">
-      <button class="btn btn-ghost" style="font-size:.8rem;padding:8px 14px;" onclick="reloadSofaScore()">↻ Atualizar</button>
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
+      ${updatedLabel}
+      <button class="ios-btn ios-btn-gray" style="font-size:.78rem;padding:6px 12px;" onclick="reloadSofaScore()">↻ Atualizar</button>
     </div>`;
 
     panel.innerHTML = html;
 
   } catch (e) {
+    console.error('[renderSofaScore]', e);
     panel.innerHTML = `
       <p class="muted" style="padding:16px 0 8px;text-align:center;">
         Não foi possível carregar os jogos.<br>
-        <span style="font-size:.8rem;">A API pode estar temporariamente indisponível.</span>
+        <span style="font-size:.8rem;">Verifique se o GitHub Actions está configurado.</span>
       </p>
       <div style="text-align:center;">
-        <button class="btn btn-ghost" style="font-size:.85rem;" onclick="reloadSofaScore()">↻ Tentar novamente</button>
+        <button class="ios-btn ios-btn-gray" onclick="reloadSofaScore()">↻ Tentar novamente</button>
       </div>`;
   } finally {
     sofascoreLoading = false;
   }
 }
 
+async function fetchMatchesFallback(key) {
+  // Proxies CORS como fallback (menos fiável mas tenta mesmo assim)
+  const proxies = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  ];
+  const BASE = `https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches`;
+  const hdrs = { 'X-Auth-Token': key };
+
+  for (const makeUrl of proxies) {
+    try {
+      const [finRes, schedRes] = await Promise.all([
+        fetch(makeUrl(`${BASE}?status=FINISHED&limit=5`), { headers: hdrs, signal: AbortSignal.timeout(7000) }),
+        fetch(makeUrl(`${BASE}?status=SCHEDULED,TIMED&limit=5`), { headers: hdrs, signal: AbortSignal.timeout(7000) }),
+      ]);
+      if (finRes.ok || schedRes.ok) {
+        const finData   = finRes.ok   ? await finRes.json()   : null;
+        const schedData = schedRes.ok ? await schedRes.json() : null;
+        return {
+          finished: (finData?.matches  || []).slice(-5).reverse(),
+          upcoming: (schedData?.matches || []).slice(0, 5),
+          updatedAt: new Date().toISOString()
+        };
+      }
+    } catch { /* tenta próximo proxy */ }
+  }
+  return null;
+}
+
 function reloadSofaScore() {
   sofascoreLoading = false;
   renderSofaScore();
 }
+
 
 
 function matchRowHTML(m, finished) {
@@ -2120,8 +2152,6 @@ function matchRowHTML(m, finished) {
 
 let chatPublicRef = null;
 let chatAdminRef = null;
-let chatPublicListener = null;
-let chatAdminListener = null;
 let chatInitialized = false;
 let chatAdminListenerRegistered = false;
 
@@ -2132,6 +2162,7 @@ function initChat() {
   chatPublicRef = db.ref('bolao-cruzeiro-debates/chat/public');
   chatAdminRef  = db.ref('bolao-cruzeiro-debates/chat/admin');
 
+  // Listener público — regista apenas uma vez
   if (!chatInitialized) {
     chatInitialized = true;
 
@@ -2152,7 +2183,7 @@ function initChat() {
     });
   }
 
-  // Regista listener admin separadamente — pode ser chamado depois do login
+  // Listener admin — regista quando o utilizador já é admin (pode ser chamado múltiplas vezes com segurança)
   if (isAdmin() && !chatAdminListenerRegistered) {
     chatAdminListenerRegistered = true;
 
@@ -2213,26 +2244,34 @@ function renderChatMessage(msg, containerId, snapKey) {
 }
 
 function deleteChatMessage(containerId, snapKey) {
-  if (!snapKey) return;
+  if (!snapKey) { showToast('ID da mensagem inválido.'); return; }
   if (!confirm('Apagar esta mensagem?')) return;
 
   const isPublic = containerId === 'chatMessagesWrapMain';
   const ref = isPublic ? chatPublicRef : chatAdminRef;
-  if (!ref) { showToast('Chat não disponível.'); return; }
+  if (!ref) { showToast('Chat não disponível — Firebase não ligado.'); return; }
 
-  ref.child(snapKey).remove()
+  // Remove direto na ref base do chat, não na query limitToLast
+  const baseRef = isPublic
+    ? firebase.database().ref('bolao-cruzeiro-debates/chat/public/' + snapKey)
+    : firebase.database().ref('bolao-cruzeiro-debates/chat/admin/' + snapKey);
+
+  baseRef.remove()
     .then(() => {
-      // Remove visualmente
       const wrap = document.getElementById(containerId);
       if (wrap) {
-        const el_ = wrap.querySelector(`[data-snap-key="${snapKey}"]`);
-        if (el_) el_.remove();
+        const node = wrap.querySelector(`[data-snap-key="${snapKey}"]`);
+        if (node) node.remove();
       }
       showToast('Mensagem apagada.');
     })
     .catch(err => {
-      console.error('Erro ao apagar mensagem:', err);
-      showToast('Não foi possível apagar a mensagem.');
+      console.error('[deleteChatMessage] erro Firebase:', err.code, err.message);
+      if (err.code === 'PERMISSION_DENIED') {
+        showToast('Sem permissão para apagar esta mensagem. Verifique as regras do Firebase.');
+      } else {
+        showToast('Erro ao apagar: ' + (err.message || err.code));
+      }
     });
 }
 
