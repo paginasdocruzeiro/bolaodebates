@@ -1986,8 +1986,11 @@ function renderPlayersList() {
   `;
 }
 
-// ── Painel "Ao Vivo" — lê jogos do Firebase (escritos pelo GitHub Actions) ──────
+// ── Painel "Ao Vivo" — TheSportsDB (gratuita, sem chave, suporta CORS) ──────
 let sofascoreLoading = false;
+
+// ID do Cruzeiro na TheSportsDB
+const THESPORTSDB_TEAM_ID = 146322;
 
 async function renderSofaScore() {
   if (!currentUser()) return;
@@ -2000,59 +2003,40 @@ async function renderSofaScore() {
   panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
   try {
-    // Tenta ler do Firebase primeiro (actualizado pelo GitHub Actions sem CORS)
-    let data = null;
+    // TheSportsDB — API pública, gratuita, sem chave, suporta CORS
+    const [nextRes, lastRes] = await Promise.all([
+      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${THESPORTSDB_TEAM_ID}`),
+      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${THESPORTSDB_TEAM_ID}`)
+    ]);
 
-    if (firebaseSyncEnabled && window.firebase) {
-      const snap = await firebase.database()
-        .ref('bolao-cruzeiro-debates/matches')
-        .once('value');
-      data = snap.val();
-    }
+    const nextData = nextRes.ok ? await nextRes.json() : null;
+    const lastData = lastRes.ok ? await lastRes.json() : null;
 
-    // Fallback: tenta proxies CORS se Firebase não tiver dados
-    if (!data || (!data.finished?.length && !data.upcoming?.length)) {
-      const key = window.BOLAO_FOOTBALL_KEY;
-      if (key && key !== 'cole_o_seu_token_aqui') {
-        data = await fetchMatchesFallback(key);
-      }
-    }
-
-    if (!data || (!data.finished?.length && !data.upcoming?.length)) {
-      panel.innerHTML = `
-        <p class="muted" style="padding:16px 0 8px;text-align:center;">
-          Sem jogos disponíveis.<br>
-          <span style="font-size:.8rem;opacity:.7;">O GitHub Actions actualiza automaticamente a cada hora.</span>
-        </p>
-        <div style="text-align:center;">
-          <button class="ios-btn ios-btn-gray" style="margin-top:8px;" onclick="reloadSofaScore()">↻ Tentar novamente</button>
-        </div>`;
-      return;
-    }
-
-    // Formata data de actualização
-    const updatedLabel = data.updatedAt
-      ? `<span style="font-size:.74rem;color:var(--text-3);">Actualizado: ${new Date(data.updatedAt).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}</span>`
-      : '';
+    const upcoming = (nextData?.events || []).slice(0, 5);
+    const finished = (lastData?.results || []).slice(0, 5).reverse();
 
     let html = '';
 
-    if (data.upcoming?.length) {
+    if (upcoming.length) {
       html += `<div style="margin-bottom:20px;">
         <div class="mini-label" style="margin-bottom:10px;">Próximos jogos</div>
-        ${data.upcoming.map(m => matchRowHTML(m, false)).join('')}
+        ${upcoming.map(m => matchRowHTMLSportsDB(m, false)).join('')}
       </div>`;
     }
 
-    if (data.finished?.length) {
+    if (finished.length) {
       html += `<div>
         <div class="mini-label" style="margin-bottom:10px;">Resultados recentes</div>
-        ${data.finished.map(m => matchRowHTML(m, true)).join('')}
+        ${finished.map(m => matchRowHTMLSportsDB(m, true)).join('')}
       </div>`;
+    }
+
+    if (!html) {
+      html = `<p class="muted" style="padding:24px;text-align:center;">Sem jogos disponíveis neste momento.</p>`;
     }
 
     html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
-      ${updatedLabel}
+      <span style="font-size:.74rem;color:var(--text-3);">Fonte: TheSportsDB</span>
       <button class="ios-btn ios-btn-gray" style="font-size:.78rem;padding:6px 12px;" onclick="reloadSofaScore()">↻ Atualizar</button>
     </div>`;
 
@@ -2063,9 +2047,9 @@ async function renderSofaScore() {
     panel.innerHTML = `
       <p class="muted" style="padding:16px 0 8px;text-align:center;">
         Não foi possível carregar os jogos.<br>
-        <span style="font-size:.8rem;">Verifique se o GitHub Actions está configurado.</span>
+        <span style="font-size:.8rem;">Verifique a ligação à internet.</span>
       </p>
-      <div style="text-align:center;">
+      <div style="text-align:center;margin-top:8px;">
         <button class="ios-btn ios-btn-gray" onclick="reloadSofaScore()">↻ Tentar novamente</button>
       </div>`;
   } finally {
@@ -2073,39 +2057,73 @@ async function renderSofaScore() {
   }
 }
 
-async function fetchMatchesFallback(key) {
-  // Proxies CORS como fallback (menos fiável mas tenta mesmo assim)
-  const proxies = [
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  ];
-  const BASE = `https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches`;
-  const hdrs = { 'X-Auth-Token': key };
+function matchRowHTMLSportsDB(m, isFinished) {
+  const homeTeam   = m.strHomeTeam || '?';
+  const awayTeam   = m.strAwayTeam || '?';
+  const homeBadge  = m.strHomeTeamBadge || getLocalCrest(homeTeam);
+  const awayBadge  = m.strAwayTeamBadge || getLocalCrest(awayTeam);
+  const competition = m.strLeague || '';
 
-  for (const makeUrl of proxies) {
-    try {
-      const [finRes, schedRes] = await Promise.all([
-        fetch(makeUrl(`${BASE}?status=FINISHED&limit=5`), { headers: hdrs, signal: AbortSignal.timeout(7000) }),
-        fetch(makeUrl(`${BASE}?status=SCHEDULED,TIMED&limit=5`), { headers: hdrs, signal: AbortSignal.timeout(7000) }),
-      ]);
-      if (finRes.ok || schedRes.ok) {
-        const finData   = finRes.ok   ? await finRes.json()   : null;
-        const schedData = schedRes.ok ? await schedRes.json() : null;
-        return {
-          finished: (finData?.matches  || []).slice(-5).reverse(),
-          upcoming: (schedData?.matches || []).slice(0, 5),
-          updatedAt: new Date().toISOString()
-        };
-      }
-    } catch { /* tenta próximo proxy */ }
+  // Data/hora
+  const dateRaw = m.dateEvent && m.strTime
+    ? new Date(`${m.dateEvent}T${m.strTime}Z`)
+    : m.dateEvent ? new Date(m.dateEvent) : null;
+  const dateStr = dateRaw
+    ? new Intl.DateTimeFormat('pt-BR', {
+        timeZone: APP_TIMEZONE,
+        day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+        hourCycle: 'h23'
+      }).format(dateRaw)
+    : '';
+
+  // Resultado
+  let scoreHTML = '';
+  if (isFinished && m.intHomeScore !== null && m.intAwayScore !== null) {
+    const gh = m.intHomeScore ?? '?';
+    const ga = m.intAwayScore ?? '?';
+    const isCruzeiroHome = homeTeam.toLowerCase().includes('cruzeiro');
+    const cg = isCruzeiroHome ? gh : ga;
+    const og = isCruzeiroHome ? ga : gh;
+    const won  = Number(cg) > Number(og);
+    const drew = Number(cg) === Number(og);
+    const color = won ? 'var(--green)' : drew ? 'var(--gold)' : 'var(--red)';
+    scoreHTML = `<span style="font-size:1.15rem;font-weight:800;color:${color};min-width:52px;text-align:center;">${gh} – ${ga}</span>`;
+  } else {
+    scoreHTML = `<span style="font-size:.82rem;color:var(--text-3);min-width:52px;text-align:center;">${dateStr}</span>`;
   }
-  return null;
+
+  const homeImg = homeBadge && homeBadge.startsWith('http')
+    ? `<img src="${homeBadge}" alt="${homeTeam}" width="24" height="24" style="object-fit:contain;" onerror="this.src='Escudos/default.svg'">`
+    : crestImgHTML(getLocalCrest(homeTeam), homeTeam, 24);
+
+  const awayImg = awayBadge && awayBadge.startsWith('http')
+    ? `<img src="${awayBadge}" alt="${awayTeam}" width="24" height="24" style="object-fit:contain;" onerror="this.src='Escudos/default.svg'">`
+    : crestImgHTML(getLocalCrest(awayTeam), awayTeam, 24);
+
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);">
+      <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">
+        ${homeImg}
+        <span style="font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${homeTeam}</span>
+      </div>
+      ${scoreHTML}
+      <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;justify-content:flex-end;">
+        <span style="font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${awayTeam}</span>
+        ${awayImg}
+      </div>
+    </div>
+    <div style="font-size:.75rem;color:var(--text-3);padding:2px 0 6px;">${competition}${isFinished ? '' : ' · ' + dateStr}</div>
+  `;
 }
 
 function reloadSofaScore() {
   sofascoreLoading = false;
   renderSofaScore();
 }
+
+async function fetchMatchesFallback(key) { return null; } // já não necessário
+
 
 
 
