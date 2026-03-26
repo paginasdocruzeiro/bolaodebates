@@ -120,17 +120,16 @@
             <div class="section-head" style="margin-bottom:16px;">
               <div>
                 <h2>⚽ Cruzeiro ao vivo</h2>
-                <p class="muted">Resultados, calendário e estatísticas em tempo real via SofaScore.</p>
+                <p class="muted">Próximos jogos e resultados recentes do Cruzeiro.</p>
               </div>
             </div>
-            <article class="panel" style="padding:0;overflow:hidden;border-radius:var(--radius);margin-bottom:22px;">
-              <iframe
-                src="https://widgets.sofascore.com/embed/team?id=1954&defaultTab=matches&widgetTheme=dark&lang=pt_BR"
-                style="width:100%;height:500px;border:none;display:block;"
-                title="Cruzeiro — SofaScore"
-                loading="lazy"
-                allowfullscreen>
-              </iframe>
+            <article class="panel" style="margin-bottom:22px;" id="sofascorePanel">
+              <div id="sofascoreContent">
+                <div class="muted" style="text-align:center;padding:32px 0;">
+                  <span style="font-size:1.5rem;">⚽</span><br>
+                  <span style="font-size:.9rem;">A carregar jogos do Cruzeiro...</span>
+                </div>
+              </div>
             </article>
 
             <!-- Secção IA -->
@@ -362,90 +361,88 @@
             </div>
 
             <div id="tab-admin-rounds" class="tab-pane active">
-            <div class="section-grid two-col">
-              <article class="panel">
-                <span class="mini-label">Rodadas</span>
-                <h3>Criar ou editar</h3>
-                <form id="roundForm" class="form-stack compact">
-                  <label>
-                    Rodada
-                    <select id="roundSelect"></select>
-                  </label>
-                  <label>
-                    Título
-                    <input id="roundTitle" type="text" required />
-                  </label>
-                  <label>
-                    Adversário
-                    <input id="roundOpponentName" type="text" required />
-                  </label>
-                  <label>
-                    Competição
-                    <input id="roundCompetition" type="text" required />
-                  </label>
-                  <label>
-                    Data e hora do jogo
-                    <input id="roundMatchTime" type="datetime-local" required />
-                  </label>
-                  <label>
-                    Fecho das apostas
-                    <input id="roundDeadline" type="datetime-local" required />
-                  </label>
-                  <label>
-                    Estado manual
-                    <select id="roundManualState">
-                      <option value="auto">Automático</option>
-                      <option value="upcoming">Em espera</option>
-                      <option value="open">Apostas abertas</option>
-                      <option value="closed">Apostas encerradas</option>
-                      <option value="finalized">Rodada finalizada</option>
-                    </select>
-                  </label>
-                  <div class="score-grid admin-score">
+              <div class="section-grid two-col">
+                <article class="panel">
+                  <span class="mini-label">Rodadas</span>
+                  <h3>Criar ou editar</h3>
+                  <form id="roundForm" class="form-stack compact">
                     <label>
-                      Resultado Cruzeiro
-                      <input id="resultCruzeiro" type="number" min="0" max="20" />
+                      Rodada
+                      <select id="roundSelect"></select>
                     </label>
-                    <div class="versus">x</div>
                     <label>
-                      Resultado adversário
-                      <input id="resultOpponent" type="number" min="0" max="20" />
+                      Título
+                      <input id="roundTitle" type="text" required />
                     </label>
+                    <label>
+                      Adversário
+                      <input id="roundOpponentName" type="text" required />
+                    </label>
+                    <label>
+                      Competição
+                      <input id="roundCompetition" type="text" required />
+                    </label>
+                    <label>
+                      Data e hora do jogo
+                      <input id="roundMatchTime" type="datetime-local" required />
+                    </label>
+                    <label>
+                      Fecho das apostas
+                      <input id="roundDeadline" type="datetime-local" required />
+                    </label>
+                    <label>
+                      Estado manual
+                      <select id="roundManualState">
+                        <option value="auto">Automático</option>
+                        <option value="upcoming">Em espera</option>
+                        <option value="open">Apostas abertas</option>
+                        <option value="closed">Apostas encerradas</option>
+                        <option value="finalized">Rodada finalizada</option>
+                      </select>
+                    </label>
+                    <div class="score-grid admin-score">
+                      <label>
+                        Resultado Cruzeiro
+                        <input id="resultCruzeiro" type="number" min="0" max="20" />
+                      </label>
+                      <div class="versus">x</div>
+                      <label>
+                        Resultado adversário
+                        <input id="resultOpponent" type="number" min="0" max="20" />
+                      </label>
+                    </div>
+                    <button class="btn btn-primary" type="submit">Salvar rodada</button>
+                  </form>
+                </article>
+
+                <article class="panel">
+                  <span class="mini-label">Ações rápidas</span>
+                  <h3>Gestão</h3>
+
+                  <div id="missingBetsAdminWrap" class="notice"></div>
+
+                  <div class="action-grid">
+                    <button class="btn btn-primary" id="newRoundBtn">+ Nova rodada</button>
+                    <button class="btn btn-success" id="openRoundBtn">✅ Abrir apostas</button>
+                    <button class="btn btn-warning" id="closeRoundBtn">🔒 Fechar apostas</button>
+                    <button class="btn btn-danger" id="finalizeRoundBtn">🏁 Finalizar rodada</button>
+                    <button class="btn btn-ghost" id="recalcBtn">↻ Recalcular ranking</button>
+                    <button class="btn btn-ghost" id="generateWhatsBtn">💬 Gerar mensagem WhatsApp</button>
+                    <button class="btn btn-secondary" id="missingBetsBtn">📲 Apostadores em falta</button>
                   </div>
-                  <button class="btn btn-primary" type="submit">Salvar rodada</button>
-                </form>
-              </article>
 
-              <article class="panel">
-                <span class="mini-label">Ações rápidas</span>
-                <h3>Gestão</h3>
+                  <label>
+                    Mensagem pronta
+                    <textarea id="whatsMessage" rows="18" style="min-height:220px;"></textarea>
+                  </label>
+                  <div class="inline-actions">
+                    <button class="btn btn-secondary" id="copyWhatsBtn">Copiar mensagem</button>
+                    <button class="btn btn-primary" id="openWhatsBtn">Abrir no WhatsApp</button>
+                  </div>
 
-                <div id="missingBetsAdminWrap" class="notice"></div>
-
-                <div class="action-grid">
-                  <button class="btn btn-primary" id="newRoundBtn">+ Nova rodada</button>
-                  <button class="btn btn-success" id="openRoundBtn">✅ Abrir apostas</button>
-                  <button class="btn btn-warning" id="closeRoundBtn">🔒 Fechar apostas</button>
-                  <button class="btn btn-danger" id="finalizeRoundBtn">🏁 Finalizar rodada</button>
-                  <button class="btn btn-ghost" id="recalcBtn">↻ Recalcular ranking</button>
-                  <button class="btn btn-ghost" id="generateWhatsBtn">💬 Gerar mensagem WhatsApp</button>
-                  <button class="btn btn-secondary" id="missingBetsBtn">📲 Apostadores em falta</button>
-                </div>
-
-                <label>
-                  Mensagem pronta
-                  <textarea id="whatsMessage" rows="18" style="min-height:220px;"></textarea>
-                </label>
-                <div class="inline-actions">
-                  <button class="btn btn-secondary" id="copyWhatsBtn">Copiar mensagem</button>
-                  <button class="btn btn-primary" id="openWhatsBtn">Abrir no WhatsApp</button>
-                </div>
-
-                <div class="notice" id="adminUidDisplay" style="margin-top:12px;display:grid;gap:6px;"></div>
-              </article>
-            </div>
-
-            </div><!-- /section-grid two-col -->
+                  <div class="notice" id="adminUidDisplay" style="margin-top:12px;display:grid;gap:6px;"></div>
+                </article>
+              </div>
             </div><!-- /tab-admin-rounds -->
 
             <div id="tab-admin-players" class="tab-pane hidden">
