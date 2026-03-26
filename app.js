@@ -950,8 +950,10 @@ const BRASILEIRAO_ID = 2013; // ID da Série A
 async function fetchFootballData(endpoint) {
   const key = window.BOLAO_FOOTBALL_KEY;
   if (!key || key === 'cole_o_seu_token_aqui') return null;
+  const PROXY = 'https://corsproxy.io/?';
+  const url   = `https://api.football-data.org/v4/${endpoint}`;
   try {
-    const res = await fetch(`https://api.football-data.org/v4/${endpoint}`, {
+    const res = await fetch(`${PROXY}${encodeURIComponent(url)}`, {
       headers: { 'X-Auth-Token': key }
     });
     if (!res.ok) return null;
@@ -1941,6 +1943,16 @@ function removePlayer(userId) {
   showToast(`${user.name} removido.`);
 }
 
+function resetPlayerPin(userId) {
+  const user = state.users.find(u => u.id === userId);
+  if (!user) return;
+  if (!confirm(`Resetar o PIN de "${user.name}"? O jogador terá de definir um novo PIN no próximo login.`)) return;
+  user.pin = null;
+  saveState('users');
+  renderPlayersList();
+  showToast(`PIN de ${user.name} resetado.`);
+}
+
 function renderPlayersList() {
   const wrap = el('playersListWrap');
   if (!wrap) return;
@@ -1950,16 +1962,17 @@ function renderPlayersList() {
         <th style="padding:8px 6px;color:var(--text-2);text-align:left;">Nome</th>
         <th style="padding:8px 6px;color:var(--text-2);text-align:left;">Pts base</th>
         <th style="padding:8px 6px;color:var(--text-2);text-align:left;">PIN</th>
-        <th style="padding:8px 6px;"></th>
+        <th style="padding:8px 6px;color:var(--text-2);text-align:left;">Ações</th>
       </tr></thead>
       <tbody>
         ${state.users.map(u => `
           <tr style="border-top:1px solid var(--line);">
-            <td style="padding:8px 6px;">${u.name}${u.isAdmin ? ' <span style="color:var(--gold);font-size:.75rem;">admin</span>' : ''}</td>
+            <td style="padding:8px 6px;">${avatarHTML(u.name)}${u.name}${u.isAdmin ? ' <span style="color:var(--gold);font-size:.75rem;">admin</span>' : ''}</td>
             <td style="padding:8px 6px;">${u.basePoints}</td>
-            <td style="padding:8px 6px;">${u.pin ? '✅' : '—'}</td>
-            <td style="padding:8px 6px;">
-              ${!u.isAdmin ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:.78rem;" onclick="removePlayer('${u.id}')">Remover</button>` : ''}
+            <td style="padding:8px 6px;">${u.pin ? '✅ Definido' : '⚠️ Sem PIN'}</td>
+            <td style="padding:8px 6px;display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn btn-warning" style="padding:5px 9px;font-size:.76rem;" onclick="resetUserPin('${u.id}')">🔑 Reset PIN</button>
+              ${!u.isAdmin ? `<button class="btn btn-danger" style="padding:5px 9px;font-size:.76rem;" onclick="removePlayer('${u.id}')">🗑 Remover</button>` : ''}
             </td>
           </tr>
         `).join('')}
@@ -1970,16 +1983,16 @@ function renderPlayersList() {
 
 
 // ── Painel "Ao Vivo" — jogos do Cruzeiro via football-data.org ──────
-let sofascoreLoaded = false;
+let sofascoreLoading = false;
 
 async function renderSofaScore() {
   if (!currentUser()) return; // secção só visível após login
   const panel = el('sofascoreContent');
   if (!panel) return;
 
-  // Só carrega uma vez por sessão para não esgotar rate limit
-  if (sofascoreLoaded) return;
-  sofascoreLoaded = true;
+  // Não inicia novo carregamento se já está a carregar
+  if (sofascoreLoading) return;
+  sofascoreLoading = true;
 
   const key = window.BOLAO_FOOTBALL_KEY;
   if (!key || key === 'cole_o_seu_token_aqui') {
@@ -1987,13 +2000,16 @@ async function renderSofaScore() {
     return;
   }
 
-  panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos...</div>`;
+  panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
   try {
-    // Busca jogos do Cruzeiro: passados (FINISHED) e futuros (SCHEDULED/TIMED)
+    // Usa um proxy CORS público para contornar restrições de CORS da football-data.org
+    const PROXY = 'https://corsproxy.io/?';
+    const BASE  = `https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches`;
+
     const [finRes, schedRes] = await Promise.all([
-      fetch(`https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches?status=FINISHED&limit=5`, { headers: { 'X-Auth-Token': key } }),
-      fetch(`https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches?status=SCHEDULED,TIMED&limit=5`, { headers: { 'X-Auth-Token': key } })
+      fetch(`${PROXY}${encodeURIComponent(BASE + '?status=FINISHED&limit=5')}`, { headers: { 'X-Auth-Token': key } }),
+      fetch(`${PROXY}${encodeURIComponent(BASE + '?status=SCHEDULED,TIMED&limit=5')}`, { headers: { 'X-Auth-Token': key } })
     ]);
 
     const finData   = finRes.ok   ? await finRes.json()   : null;
@@ -2022,11 +2038,27 @@ async function renderSofaScore() {
       html = `<p class="muted" style="padding:24px;text-align:center;">Sem jogos disponíveis neste momento.</p>`;
     }
 
+    // Botão de actualizar
+    html += `<div style="text-align:right;margin-top:12px;">
+      <button class="btn btn-ghost" style="font-size:.8rem;padding:8px 14px;" onclick="reloadSofaScore()">↻ Atualizar</button>
+    </div>`;
+
     panel.innerHTML = html;
 
   } catch (e) {
-    panel.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">Erro ao carregar jogos. Tente novamente mais tarde.</p>`;
+    panel.innerHTML = `
+      <p class="muted" style="padding:16px;text-align:center;">Erro ao carregar jogos. Verifique a ligação.</p>
+      <div style="text-align:center;">
+        <button class="btn btn-ghost" style="font-size:.85rem;" onclick="reloadSofaScore()">↻ Tentar novamente</button>
+      </div>`;
+  } finally {
+    sofascoreLoading = false;
   }
+}
+
+function reloadSofaScore() {
+  sofascoreLoading = false;
+  renderSofaScore();
 }
 
 function matchRowHTML(m, finished) {
@@ -2094,7 +2126,16 @@ function initChat() {
 
   chatPublicRef.limitToLast(60).on('child_added', snap => {
     const msg = snap.val();
-    if (msg) renderChatMessage(msg, 'chatMessagesWrapMain');
+    if (msg) renderChatMessage(msg, 'chatMessagesWrapMain', snap.key);
+  });
+
+  // Remoção em tempo real no chat público
+  chatPublicRef.on('child_removed', snap => {
+    const wrap = document.getElementById('chatMessagesWrapMain');
+    if (wrap) {
+      const el_ = wrap.querySelector(`[data-snap-key="${snap.key}"]`);
+      if (el_) el_.remove();
+    }
   });
 
   // Listener admin — só admins
@@ -2104,21 +2145,46 @@ function initChat() {
 
     chatAdminRef.limitToLast(60).on('child_added', snap => {
       const msg = snap.val();
-      if (msg) renderChatMessage(msg, 'chatMessagesWrapAdmin');
+      if (msg) renderChatMessage(msg, 'chatMessagesWrapAdmin', snap.key);
+    });
+
+    chatAdminRef.on('child_removed', snap => {
+      const wrap = document.getElementById('chatMessagesWrapAdmin');
+      if (wrap) {
+        const el_ = wrap.querySelector(`[data-snap-key="${snap.key}"]`);
+        if (el_) el_.remove();
+      }
     });
   }
 }
 
-function renderChatMessage(msg, containerId) {
+function renderChatMessage(msg, containerId, snapKey) {
   const user = currentUser();
   const isMe = msg.userName === user?.name;
   const time = new Date(msg.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
+  // Identificação do remetente — sempre visível
+  const senderColor = AVATAR_COLORS[msg.userName.charCodeAt(0) % AVATAR_COLORS.length];
+  const senderLabel = isMe
+    ? `<span style="font-size:.72rem;color:${senderColor};margin-bottom:3px;font-weight:700;">Você (${msg.userName})</span>`
+    : `<span style="font-size:.72rem;color:${senderColor};margin-bottom:3px;font-weight:700;">${msg.userName}</span>`;
+
+  // Botão apagar — visível para o próprio ou para admins
+  const canDelete = isMe || isAdmin();
+  const deleteBtn = canDelete && snapKey
+    ? `<button onclick="deleteChatMessage('${containerId}','${snapKey}')" title="Apagar mensagem" style="background:none;border:none;cursor:pointer;color:var(--text-3);font-size:.8rem;padding:2px 4px;line-height:1;opacity:.6;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.6">🗑</button>`
+    : '';
+
   const msgHTML = `
-    <div style="display:flex;flex-direction:column;align-items:${isMe ? 'flex-end' : 'flex-start'};">
-      ${!isMe ? `<span style="font-size:.72rem;color:var(--text-3);margin-bottom:3px;">${msg.userName}</span>` : ''}
-      <div style="max-width:78%;padding:10px 14px;border-radius:${isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};background:${isMe ? 'var(--active)' : 'rgba(255,255,255,.07)'};color:var(--text);font-size:.92rem;word-break:break-word;">
-        ${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+    <div data-snap-key="${snapKey || ''}" style="display:flex;flex-direction:column;align-items:${isMe ? 'flex-end' : 'flex-start'};">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:3px;">
+        ${senderLabel}
+      </div>
+      <div style="display:flex;align-items:flex-end;gap:6px;flex-direction:${isMe ? 'row-reverse' : 'row'};">
+        <div style="max-width:78%;padding:10px 14px;border-radius:${isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};background:${isMe ? 'var(--active)' : 'rgba(255,255,255,.07)'};color:var(--text);font-size:.92rem;word-break:break-word;">
+          ${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
+        </div>
+        ${deleteBtn}
       </div>
       <span style="font-size:.7rem;color:var(--text-3);margin-top:3px;">${time}</span>
     </div>
@@ -2128,6 +2194,30 @@ function renderChatMessage(msg, containerId) {
   if (!wrap) return;
   wrap.insertAdjacentHTML('beforeend', msgHTML);
   wrap.scrollTop = wrap.scrollHeight;
+}
+
+function deleteChatMessage(containerId, snapKey) {
+  if (!snapKey) return;
+  if (!confirm('Apagar esta mensagem?')) return;
+
+  const isPublic = containerId === 'chatMessagesWrapMain';
+  const ref = isPublic ? chatPublicRef : chatAdminRef;
+  if (!ref) { showToast('Chat não disponível.'); return; }
+
+  ref.child(snapKey).remove()
+    .then(() => {
+      // Remove visualmente
+      const wrap = document.getElementById(containerId);
+      if (wrap) {
+        const el_ = wrap.querySelector(`[data-snap-key="${snapKey}"]`);
+        if (el_) el_.remove();
+      }
+      showToast('Mensagem apagada.');
+    })
+    .catch(err => {
+      console.error('Erro ao apagar mensagem:', err);
+      showToast('Não foi possível apagar a mensagem.');
+    });
 }
 
 function sendChatMessage(inputId, isAdminChat = false) {
@@ -2183,25 +2273,34 @@ function renderAdmin() {
   guard.classList.add('hidden');
   content.classList.remove('hidden');
 
-  el('roundSelect').innerHTML = state.rounds.map(r => `<option value="${r.id}">${r.title}, Cruzeiro x ${r.opponent}</option>`).join('');
-  if (!el('roundSelect').value && state.rounds[0]) el('roundSelect').value = state.rounds[0].id;
-  populateRoundForm(el('roundSelect').value);
+  // Popula select de rodadas
+  const roundSelect = el('roundSelect');
+  if (roundSelect) {
+    roundSelect.innerHTML = state.rounds
+      .slice()
+      .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))
+      .map(r => `<option value="${r.id}">${r.title} — Cruzeiro x ${r.opponent}</option>`)
+      .join('');
+    if (!roundSelect.value && state.rounds[0]) roundSelect.value = state.rounds[0].id;
+    populateRoundForm(roundSelect.value);
+  }
 
+  // Apostadores em falta
   const missingWrap = el('missingBetsAdminWrap');
   if (missingWrap) {
     const round = getCurrentRound();
     const missing = getMissingBettors(round);
-
     missingWrap.innerHTML = round && effectiveRoundState(round) === 'open'
       ? (missing.length
           ? `<p><strong>Apostadores em falta:</strong> ${missing.map(u => u.name).join(', ')}</p>`
-          : `<p><strong>Apostadores em falta:</strong> ninguém, todos já apostaram.</p>`)
+          : `<p><strong>Apostadores em falta:</strong> ninguém, todos já apostaram. ✅</p>`)
       : '<p><strong>Apostadores em falta:</strong> sem rodada aberta.</p>';
   }
 
   renderPlayersList();
+  renderAdminRoundsHistory();
 
-  // Show Firebase UID so admins can share it for registration in adminUids
+  // Firebase UID
   const uidWrap = el('adminUidDisplay');
   if (uidWrap) {
     const uid = getFirebaseUid();
@@ -2211,6 +2310,98 @@ function renderAdmin() {
          <span class="muted" style="font-size:.78rem">Compartilhe esse valor com o Ivo para ser registrado como admin.</span>`
       : `<span class="muted" style="font-size:.78rem">UID não disponível (modo local).</span>`;
   }
+}
+
+function renderAdminRoundsHistory() {
+  const wrap = el('adminRoundsHistoryWrap');
+  if (!wrap) return;
+
+  const sorted = [...state.rounds].sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime));
+
+  if (!sorted.length) {
+    wrap.innerHTML = '<p class="muted">Nenhuma rodada registada.</p>';
+    return;
+  }
+
+  wrap.innerHTML = sorted.map(r => {
+    const betsInRound = getBetsArray().filter(b => b.roundId === r.id);
+    const hasResult = r.resultCruzeiro !== null && r.resultOpponent !== null;
+    const resultLabel = hasResult ? `${r.resultCruzeiro}x${r.resultOpponent}` : 'Sem resultado';
+    const rr = hasResult ? getRoundRanking(r) : [];
+    const winner = rr.length ? roundWinnerLabel(rr) : null;
+
+    return `
+      <div style="padding:14px 0;border-bottom:1px solid var(--line);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+          <div>
+            <strong>${r.title}</strong>
+            <span style="color:var(--text-3);font-size:.82rem;"> — Cruzeiro x ${r.opponent} (${r.competition})</span><br>
+            <span style="font-size:.82rem;color:var(--text-2);">${formatDateTime(r.matchTime)} · ${roundStateLabel(r)}</span>
+          </div>
+          <div style="text-align:right;">
+            <span style="font-weight:700;color:${hasResult ? 'var(--green)' : 'var(--text-3)'};">${resultLabel}</span><br>
+            <span style="font-size:.78rem;color:var(--text-2);">${betsInRound.length} aposta(s)</span>
+            ${winner && winner.points > 0 ? `<br><span style="font-size:.78rem;color:var(--gold);">🏆 ${winner.text}</span>` : ''}
+          </div>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost" style="font-size:.78rem;padding:6px 10px;" onclick="adminSelectRound('${r.id}')">✏️ Editar</button>
+          <button class="btn btn-danger" style="font-size:.78rem;padding:6px 10px;" onclick="deleteRound('${r.id}')">🗑 Apagar</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function adminSelectRound(roundId) {
+  // Vai para a tab de rodadas e seleciona a rodada
+  const tabBtn = document.querySelector('[data-tab="tab-admin-rounds"]');
+  if (tabBtn) tabBtn.click();
+
+  const roundSelect = el('roundSelect');
+  if (roundSelect) {
+    roundSelect.value = roundId;
+    populateRoundForm(roundId);
+  }
+  showToast('Rodada selecionada para edição.');
+}
+
+function deleteRound(roundId) {
+  const round = getRound(roundId);
+  if (!round) return;
+  if (!confirm(`Apagar a rodada "${round.title} — Cruzeiro x ${round.opponent}"?\n\nAs apostas desta rodada também serão removidas.`)) return;
+
+  // Remove apostas da rodada
+  Object.keys(state.bets).forEach(betId => {
+    if (state.bets[betId]?.roundId === roundId) {
+      delete state.bets[betId];
+      if (firebaseDbRef) firebaseDbRef.child('bets').child(betId).remove();
+    }
+  });
+
+  state.rounds = state.rounds.filter(r => r.id !== roundId);
+  saveState('admin');
+  renderAdmin();
+  showToast(`Rodada "${round.title}" apagada.`);
+}
+
+// ── Reset de PIN ─────────────────────────────────────────────
+async function resetUserPin(userId) {
+  const user = state.users.find(u => u.id === userId);
+  if (!user) return;
+
+  const newPin = prompt(`Novo PIN para ${user.name} (4 dígitos):`);
+  if (newPin === null) return; // cancelado
+  if (!/^\d{4}$/.test(newPin)) {
+    showToast('PIN inválido. Deve ter exatamente 4 dígitos.');
+    return;
+  }
+
+  const newPinHash = await hashPin(newPin, user.id);
+  user.pin = newPinHash;
+  saveState('users');
+  showToast(`PIN de ${user.name} redefinido com sucesso.`);
+  renderPlayersList();
 }
 
 function populateRoundForm(roundId) {
@@ -2431,11 +2622,17 @@ function setupEvents() {
     const targetId = btn.dataset.tab;
     if (!targetId) return;
 
-    // Encontra o container pai (irmão do tab-bar ou o pai directo)
+    // O container é o pai do tab-bar.
+    // Procura panes no container directo OU num wrapper explícito (adminTabsContainer).
     const container = bar.parentElement;
 
-    // Esconde todos os tab-pane dentro do container e mostra só o alvo
-    container.querySelectorAll(':scope > .tab-pane').forEach(pane => {
+    // Tenta primeiro no container directo, depois sobe um nível se não encontrar panes
+    let panes = Array.from(container.querySelectorAll(':scope > .tab-pane'));
+    if (!panes.length) {
+      panes = Array.from((container.parentElement || container).querySelectorAll(':scope > .tab-pane'));
+    }
+
+    panes.forEach(pane => {
       const isTarget = pane.id === targetId;
       pane.classList.toggle('hidden', !isTarget);
       pane.classList.toggle('active', isTarget);
@@ -2443,6 +2640,8 @@ function setupEvents() {
 
     // Trigger específico para certas abas
     if (targetId === 'tab-stats') renderStats();
+    if (targetId === 'tab-admin-history') renderAdminRoundsHistory();
+    if (targetId === 'tab-admin-players') renderPlayersList();
     if (targetId === 'tab-admin-chat' && isAdmin() && firebaseSyncEnabled && !chatInitialized) initChat();
   });
 
