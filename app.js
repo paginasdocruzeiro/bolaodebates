@@ -950,13 +950,10 @@ const BRASILEIRAO_ID = 2013; // ID da Série A
 async function fetchFootballData(endpoint) {
   const key = window.BOLAO_FOOTBALL_KEY;
   if (!key || key === 'cole_o_seu_token_aqui') return null;
-  const PROXY = 'https://corsproxy.io/?';
-  const url   = `https://api.football-data.org/v4/${endpoint}`;
   try {
-    const res = await fetch(`${PROXY}${encodeURIComponent(url)}`, {
-      headers: { 'X-Auth-Token': key }
-    });
-    if (!res.ok) return null;
+    const url = `https://api.football-data.org/v4/${endpoint}`;
+    const res = await fetchWithCorsProxy(url, { 'X-Auth-Token': key });
+    if (!res) return null;
     return await res.json();
   } catch {
     return null;
@@ -1971,8 +1968,8 @@ function renderPlayersList() {
             <td style="padding:8px 6px;">${u.basePoints}</td>
             <td style="padding:8px 6px;">${u.pin ? '✅ Definido' : '⚠️ Sem PIN'}</td>
             <td style="padding:8px 6px;display:flex;gap:6px;flex-wrap:wrap;">
-              <button class="btn btn-warning" style="padding:5px 9px;font-size:.76rem;" onclick="resetUserPin('${u.id}')">🔑 Reset PIN</button>
-              ${!u.isAdmin ? `<button class="btn btn-danger" style="padding:5px 9px;font-size:.76rem;" onclick="removePlayer('${u.id}')">🗑 Remover</button>` : ''}
+              <button class="ios-btn ios-btn-yellow" onclick="resetUserPin('${u.id}')">🔑 Reset PIN</button>
+              ${!u.isAdmin ? `<button class="ios-btn ios-btn-red" onclick="removePlayer('${u.id}')">🗑 Remover</button>` : ''}
             </td>
           </tr>
         `).join('')}
@@ -1981,42 +1978,60 @@ function renderPlayersList() {
   `;
 }
 
-
 // ── Painel "Ao Vivo" — jogos do Cruzeiro via football-data.org ──────
 let sofascoreLoading = false;
 
+async function fetchWithCorsProxy(url, headers = {}) {
+  const proxies = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
+  ];
+  for (const makeUrl of proxies) {
+    try {
+      const res = await fetch(makeUrl(url), {
+        headers,
+        signal: AbortSignal.timeout(8000)
+      });
+      if (res.ok) return res;
+    } catch { /* tenta próximo */ }
+  }
+  return null;
+}
+
 async function renderSofaScore() {
-  if (!currentUser()) return; // secção só visível após login
+  if (!currentUser()) return;
   const panel = el('sofascoreContent');
   if (!panel) return;
 
-  // Não inicia novo carregamento se já está a carregar
   if (sofascoreLoading) return;
   sofascoreLoading = true;
 
   const key = window.BOLAO_FOOTBALL_KEY;
   if (!key || key === 'cole_o_seu_token_aqui') {
-    panel.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">API de futebol não configurada.</p>`;
+    sofascoreLoading = false;
+    panel.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">🔑 API de futebol não configurada.</p>`;
     return;
   }
 
   panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
-  try {
-    // Usa um proxy CORS público para contornar restrições de CORS da football-data.org
-    const PROXY = 'https://corsproxy.io/?';
-    const BASE  = `https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches`;
+  const BASE = `https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches`;
+  const hdrs = { 'X-Auth-Token': key };
 
+  try {
     const [finRes, schedRes] = await Promise.all([
-      fetch(`${PROXY}${encodeURIComponent(BASE + '?status=FINISHED&limit=5')}`, { headers: { 'X-Auth-Token': key } }),
-      fetch(`${PROXY}${encodeURIComponent(BASE + '?status=SCHEDULED,TIMED&limit=5')}`, { headers: { 'X-Auth-Token': key } })
+      fetchWithCorsProxy(`${BASE}?status=FINISHED&limit=5`, hdrs),
+      fetchWithCorsProxy(`${BASE}?status=SCHEDULED,TIMED&limit=5`, hdrs),
     ]);
 
-    const finData   = finRes.ok   ? await finRes.json()   : null;
-    const schedData = schedRes.ok ? await schedRes.json() : null;
+    if (!finRes && !schedRes) throw new Error('Todos os proxies falharam.');
 
-    const finished  = (finData?.matches   || []).slice(-5).reverse();
-    const upcoming  = (schedData?.matches || []).slice(0, 5);
+    const finData   = finRes   ? await finRes.json()   : null;
+    const schedData = schedRes ? await schedRes.json() : null;
+
+    const finished = (finData?.matches   || []).slice(-5).reverse();
+    const upcoming = (schedData?.matches || []).slice(0, 5);
 
     let html = '';
 
@@ -2034,11 +2049,8 @@ async function renderSofaScore() {
       </div>`;
     }
 
-    if (!html) {
-      html = `<p class="muted" style="padding:24px;text-align:center;">Sem jogos disponíveis neste momento.</p>`;
-    }
+    if (!html) html = `<p class="muted" style="padding:24px;text-align:center;">Sem jogos disponíveis.</p>`;
 
-    // Botão de actualizar
     html += `<div style="text-align:right;margin-top:12px;">
       <button class="btn btn-ghost" style="font-size:.8rem;padding:8px 14px;" onclick="reloadSofaScore()">↻ Atualizar</button>
     </div>`;
@@ -2047,7 +2059,10 @@ async function renderSofaScore() {
 
   } catch (e) {
     panel.innerHTML = `
-      <p class="muted" style="padding:16px;text-align:center;">Erro ao carregar jogos. Verifique a ligação.</p>
+      <p class="muted" style="padding:16px 0 8px;text-align:center;">
+        Não foi possível carregar os jogos.<br>
+        <span style="font-size:.8rem;">A API pode estar temporariamente indisponível.</span>
+      </p>
       <div style="text-align:center;">
         <button class="btn btn-ghost" style="font-size:.85rem;" onclick="reloadSofaScore()">↻ Tentar novamente</button>
       </div>`;
@@ -2060,6 +2075,7 @@ function reloadSofaScore() {
   sofascoreLoading = false;
   renderSofaScore();
 }
+
 
 function matchRowHTML(m, finished) {
   const isCruzeiroHome = m.homeTeam?.id === CRUZEIRO_ID;
@@ -2102,44 +2118,44 @@ function matchRowHTML(m, finished) {
   `;
 }
 
-// ── Chat público e admin separados ────────────────────────────────
-let chatPublicRef = null;   // ref base para escrita
-let chatAdminRef = null;    // ref base para escrita (admin)
+let chatPublicRef = null;
+let chatAdminRef = null;
 let chatPublicListener = null;
 let chatAdminListener = null;
 let chatInitialized = false;
+let chatAdminListenerRegistered = false;
 
 function initChat() {
   if (!window.firebase || !window.firebase.database) return;
-  if (chatInitialized) return; // evita registar listeners duplicados
-  chatInitialized = true;
 
   const db = firebase.database();
-
-  // Referências base (para push/escrita)
   chatPublicRef = db.ref('bolao-cruzeiro-debates/chat/public');
   chatAdminRef  = db.ref('bolao-cruzeiro-debates/chat/admin');
 
-  // Listener público — limpa container antes de carregar as últimas 60 msgs
-  const publicWrap = document.getElementById('chatMessagesWrapMain');
-  if (publicWrap) publicWrap.innerHTML = '';
+  if (!chatInitialized) {
+    chatInitialized = true;
 
-  chatPublicRef.limitToLast(60).on('child_added', snap => {
-    const msg = snap.val();
-    if (msg) renderChatMessage(msg, 'chatMessagesWrapMain', snap.key);
-  });
+    const publicWrap = document.getElementById('chatMessagesWrapMain');
+    if (publicWrap) publicWrap.innerHTML = '';
 
-  // Remoção em tempo real no chat público
-  chatPublicRef.on('child_removed', snap => {
-    const wrap = document.getElementById('chatMessagesWrapMain');
-    if (wrap) {
-      const el_ = wrap.querySelector(`[data-snap-key="${snap.key}"]`);
-      if (el_) el_.remove();
-    }
-  });
+    chatPublicRef.limitToLast(60).on('child_added', snap => {
+      const msg = snap.val();
+      if (msg) renderChatMessage(msg, 'chatMessagesWrapMain', snap.key);
+    });
 
-  // Listener admin — só admins
-  if (isAdmin()) {
+    chatPublicRef.on('child_removed', snap => {
+      const wrap = document.getElementById('chatMessagesWrapMain');
+      if (wrap) {
+        const node = wrap.querySelector(`[data-snap-key="${snap.key}"]`);
+        if (node) node.remove();
+      }
+    });
+  }
+
+  // Regista listener admin separadamente — pode ser chamado depois do login
+  if (isAdmin() && !chatAdminListenerRegistered) {
+    chatAdminListenerRegistered = true;
+
     const adminWrap = document.getElementById('chatMessagesWrapAdmin');
     if (adminWrap) adminWrap.innerHTML = '';
 
@@ -2151,8 +2167,8 @@ function initChat() {
     chatAdminRef.on('child_removed', snap => {
       const wrap = document.getElementById('chatMessagesWrapAdmin');
       if (wrap) {
-        const el_ = wrap.querySelector(`[data-snap-key="${snap.key}"]`);
-        if (el_) el_.remove();
+        const node = wrap.querySelector(`[data-snap-key="${snap.key}"]`);
+        if (node) node.remove();
       }
     });
   }
@@ -2239,6 +2255,7 @@ function sendChatMessage(inputId, isAdminChat = false) {
   // push() direto na ref base — não na query limitToLast()
   ref.push({
     userName: user.name,
+    firebaseUid: getFirebaseUid() || '',
     text,
     createdAt: new Date().toISOString()
   }).catch(err => {
@@ -2325,8 +2342,8 @@ function renderAdminRoundsHistory() {
 
   wrap.innerHTML = sorted.map(r => {
     const betsInRound = getBetsArray().filter(b => b.roundId === r.id);
-    const hasResult = r.resultCruzeiro !== null && r.resultOpponent !== null;
-    const resultLabel = hasResult ? `${r.resultCruzeiro}x${r.resultOpponent}` : 'Sem resultado';
+    const hasResult = Number.isInteger(r.resultCruzeiro) && Number.isInteger(r.resultOpponent);
+    const resultLabel = hasResult ? `${r.resultCruzeiro}x${r.resultOpponent}` : 'Aguardando resultado';
     const rr = hasResult ? getRoundRanking(r) : [];
     const winner = rr.length ? roundWinnerLabel(rr) : null;
 
@@ -2344,9 +2361,9 @@ function renderAdminRoundsHistory() {
             ${winner && winner.points > 0 ? `<br><span style="font-size:.78rem;color:var(--gold);">🏆 ${winner.text}</span>` : ''}
           </div>
         </div>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-          <button class="btn btn-ghost" style="font-size:.78rem;padding:6px 10px;" onclick="adminSelectRound('${r.id}')">✏️ Editar</button>
-          <button class="btn btn-danger" style="font-size:.78rem;padding:6px 10px;" onclick="deleteRound('${r.id}')">🗑 Apagar</button>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="ios-btn ios-btn-blue" onclick="adminSelectRound('${r.id}')">✏️ Editar</button>
+          <button class="ios-btn ios-btn-red"  onclick="deleteRound('${r.id}')">🗑 Apagar</button>
         </div>
       </div>
     `;
@@ -2642,7 +2659,7 @@ function setupEvents() {
     if (targetId === 'tab-stats') renderStats();
     if (targetId === 'tab-admin-history') renderAdminRoundsHistory();
     if (targetId === 'tab-admin-players') renderPlayersList();
-    if (targetId === 'tab-admin-chat' && isAdmin() && firebaseSyncEnabled && !chatInitialized) initChat();
+    if (targetId === 'tab-admin-chat' && isAdmin() && firebaseSyncEnabled) initChat();
   });
 
   el('loginName').addEventListener('change', updateLoginHint);
