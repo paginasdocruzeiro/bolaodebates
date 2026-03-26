@@ -17,6 +17,7 @@ let state = null;
 let countdownTimer = null;
 let printMode = 'ranking';
 const views = ['home', 'round', 'ranking', 'history', 'admin', 'print'];
+// Note: ia, sofascore and chat are integrated into home view
 let currentRoute = 'home';
 let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
@@ -1308,9 +1309,6 @@ function renderSidebarUser() {
   el('sidebarUserName').textContent = user ? user.name : 'Visitante';
   el('sidebarUserMeta').textContent = user ? (user.isAdmin ? 'Administrador' : 'Participante') : 'Faça login para apostar';
   el('adminNavBtn').classList.toggle('hidden', !user?.isAdmin);
-  el('iaNavBtn')?.classList.toggle('hidden', !user);
-  el('sofascoreNavBtn')?.classList.toggle('hidden', !user);
-  el('chatNavBtn')?.classList.toggle('hidden', !user);
 }
 
 function renderHome() {
@@ -2047,12 +2045,12 @@ function sendChatMessage(inputId, isAdminChat = false) {
 }
 
 function renderChat() {
-  if (!currentUser()) { navigate('login'); return; }
+  if (!currentUser()) return; // chat section is hidden when not logged in
   if (!chatPublicRef) initChat();
 }
 
 function renderIA() {
-  if (!currentUser()) { navigate('login'); return; }
+  // IA buttons are inside homeUser which is already hidden when not logged in
 }
 
 function renderAdmin() {
@@ -2240,8 +2238,9 @@ function updatePageMeta(route) {
     print:   ['Versão para impressão', 'Versão limpa para captura de tela, impressão ou PDF.']
   };
 
-  el('pageTitle').textContent = titles[route][0];
-  el('pageSubtitle').textContent = titles[route][1];
+  const meta = titles[route] || titles['home'];
+  el('pageTitle').textContent = meta[0];
+  el('pageSubtitle').textContent = meta[1];
 }
 
 function navigate(route) {
@@ -2257,15 +2256,12 @@ function navigate(route) {
 // Maps each route to the render functions it needs.
 // Always-rendered (sidebar, logout btn, page meta) run unconditionally.
 const ROUTE_RENDERS = {
-  home:      ['renderHome'],
+  home:      ['renderHome', 'renderChat'],
   round:     ['renderDashboard', 'renderRound'],
   ranking:   ['renderRanking'],
   history:   ['renderHistory'],
   stats:     ['renderStats'],
   admin:     ['renderAdmin'],
-  ia:        ['renderIA'],
-  sofascore: ['renderSofaScore'],
-  chat:      ['renderChat'],
   print:     ['renderCurrentPrint']
 };
 
@@ -2288,7 +2284,7 @@ function renderAll(route) {
   const fn_map = {
     renderHome, renderLoginOptions, updateLoginHint, renderDashboard,
     renderRanking, renderRound, renderHistory, renderStats, renderAdmin,
-    renderCurrentPrint
+    renderChat, renderCurrentPrint
   };
   (ROUTE_RENDERS[target] || []).forEach(fnName => {
     if (fn_map[fnName]) fn_map[fnName]();
@@ -2494,9 +2490,8 @@ function setupEvents() {
   el('chatSendBtnAdmin')?.addEventListener('click', () => sendChatMessage('chatInputAdmin', true));
   el('chatInputAdmin')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage('chatInputAdmin', true); });
 
-  // Navegação
-  el('sofascoreNavBtn')?.addEventListener('click', () => navigate('sofascore'));
-  el('chatNavBtn')?.addEventListener('click', () => navigate('chat'));
+  // Chat iniciado ao carregar home se utilizador estiver logado
+
 
   el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
   el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
