@@ -1989,9 +1989,77 @@ function renderPlayersList() {
 // ── Painel "Ao Vivo" — TheSportsDB (gratuita, sem chave, suporta CORS) ──────
 let sofascoreLoading = false;
 
-const THESPORTSDB_TEAM_ID = 134294;   // Cruzeiro
-const THESPORTSDB_LEAGUE_ID = 4335;   // Brazilian Série A
-const THESPORTSDB_CDB_ID = 4336;      // Copa do Brasil
+const THESPORTSDB_TEAM_ID        = 134294;  // Cruzeiro masculino
+const THESPORTSDB_LEAGUE_ID      = 4335;    // Brasileirão Série A
+const THESPORTSDB_LIBERTADORES_ID = 4501;   // Copa Libertadores
+
+async function fetchCruzeiroMatches() {
+  const BASE   = 'https://www.thesportsdb.com/api/v1/json/3';
+  const now    = Date.now();
+  const season = '2026';
+
+  const getTime = (m) => {
+    try { return new Date(`${m.dateEvent}T${m.strTime || '12:00:00'}Z`).getTime(); }
+    catch { return 0; }
+  };
+
+  const isCruzeiroById = (m) =>
+    Number(m.idHomeTeam) === THESPORTSDB_TEAM_ID ||
+    Number(m.idAwayTeam) === THESPORTSDB_TEAM_ID;
+
+  // Descobre a ronda actual do Brasileirão para pedir as próximas rondas
+  // Busca os últimos resultados para inferir ronda actual
+  const [lastR, libertR] = await Promise.allSettled([
+    fetch(`${BASE}/eventslast.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
+    fetch(`${BASE}/eventsseason.php?id=${THESPORTSDB_LIBERTADORES_ID}&s=${season}`).then(r => r.ok ? r.json() : null),
+  ]);
+
+  const lastEvents   = lastR.status === 'fulfilled' ? (lastR.value?.results || []) : [];
+  const libertEvents = libertR.status === 'fulfilled'
+    ? (libertR.value?.events || []).filter(isCruzeiroById)
+    : [];
+
+  // Inferir ronda actual a partir do último jogo do Brasileirão
+  const lastBrasil = lastEvents
+    .filter(m => (m.strLeague || '').toLowerCase().includes('serie a') || (m.strLeague || '').toLowerCase().includes('brasileir'))
+    .sort((a, b) => getTime(b) - getTime(a))[0];
+  const currentRound = lastBrasil?.intRound ? Number(lastBrasil.intRound) : 1;
+
+  // Busca as próximas 4 rondas do Brasileirão em paralelo
+  const roundFetches = [1, 2, 3, 4].map(offset =>
+    fetch(`${BASE}/eventsround.php?id=${THESPORTSDB_LEAGUE_ID}&r=${currentRound + offset}&s=${season}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+  );
+  const roundResults = await Promise.allSettled(roundFetches);
+
+  const brazilUpcoming = roundResults
+    .flatMap(r => r.status === 'fulfilled' ? (r.value?.events || []) : [])
+    .filter(m => isCruzeiroById(m) && getTime(m) > now)
+    .sort((a, b) => getTime(a) - getTime(b));
+
+  // Libertadores futuros
+  const libertUpcoming = libertEvents
+    .filter(m => getTime(m) > now)
+    .sort((a, b) => getTime(a) - getTime(b));
+
+  // Junta e deduplica
+  const allUpcoming = [...brazilUpcoming, ...libertUpcoming]
+    .reduce((acc, m) => {
+      if (!acc.find(x => x.idEvent === m.idEvent)) acc.push(m);
+      return acc;
+    }, [])
+    .sort((a, b) => getTime(a) - getTime(b))
+    .slice(0, 5);
+
+  // Recentes: eventslast já filtrado por team ID, ordena do mais recente
+  const finished = [...lastEvents]
+    .sort((a, b) => getTime(b) - getTime(a))
+    .slice(0, 5);
+
+  console.log(`[Cruzeiro] ronda:${currentRound} recentes:${finished.length} próximos:${allUpcoming.length} (brasil:${brazilUpcoming.length} libert:${libertUpcoming.length})`);
+  return { upcoming: allUpcoming, finished };
+}
 
 async function renderSofaScore() {
   if (!currentUser()) return;
@@ -2004,41 +2072,14 @@ async function renderSofaScore() {
   panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
   try {
-    const season = new Date().getFullYear().toString();
-
-    // Busca eventos recentes (last) por team ID — funciona bem na free tier
-    // Busca próximos eventos pela liga e filtra pelo Cruzeiro (mais fiável)
-    const [lastRes, nextLeagueRes, nextCDBRes] = await Promise.all([
-      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${THESPORTSDB_TEAM_ID}`),
-      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=${THESPORTSDB_LEAGUE_ID}`),
-      fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnextleague.php?id=${THESPORTSDB_CDB_ID}`)
-    ]);
-
-    const lastData      = lastRes.ok      ? await lastRes.json()      : null;
-    const nextLeagueData = nextLeagueRes.ok ? await nextLeagueRes.json() : null;
-    const nextCDBData    = nextCDBRes.ok    ? await nextCDBRes.json()    : null;
-
-    // Resultados recentes do Cruzeiro
-    const finished = (lastData?.results || []).slice(0, 5).reverse();
-
-    // Próximos jogos — filtra pelo Cruzeiro em todas as competições
-    const allNext = [
-      ...(nextLeagueData?.events || []),
-      ...(nextCDBData?.events   || [])
-    ].filter(m =>
-      m.idHomeTeam === String(THESPORTSDB_TEAM_ID) ||
-      m.idAwayTeam === String(THESPORTSDB_TEAM_ID) ||
-      (m.strHomeTeam || '').toLowerCase().includes('cruzeiro') ||
-      (m.strAwayTeam || '').toLowerCase().includes('cruzeiro')
-    ).sort((a, b) => new Date(a.dateEvent) - new Date(b.dateEvent))
-     .slice(0, 5);
+    const { upcoming, finished } = await fetchCruzeiroMatches();
 
     let html = '';
 
-    if (allNext.length) {
+    if (upcoming.length) {
       html += `<div style="margin-bottom:20px;">
         <div class="mini-label" style="margin-bottom:10px;">Próximos jogos</div>
-        ${allNext.map(m => matchRowHTMLSportsDB(m, false)).join('')}
+        ${upcoming.map(m => matchRowHTMLSportsDB(m, false)).join('')}
       </div>`;
     }
 
@@ -2054,7 +2095,7 @@ async function renderSofaScore() {
     }
 
     html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
-      <span style="font-size:.74rem;color:var(--text-3);">Fonte: TheSportsDB</span>
+      <span style="font-size:.74rem;color:var(--text-3);">TheSportsDB · Brasileirão · Copa do Brasil · Libertadores</span>
       <button class="ios-btn ios-btn-gray" style="font-size:.78rem;padding:6px 12px;" onclick="reloadSofaScore()">↻ Atualizar</button>
     </div>`;
 
