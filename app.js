@@ -2007,13 +2007,32 @@ async function fetchCruzeiroMatches() {
     } catch { return 0; }
   };
 
-  // 1) Fonte principal: Worker + football-data.org
+  // 1) Fonte principal: Firebase (populado pelo GitHub Actions de hora em hora)
+  if (firebaseSyncEnabled && window.firebase) {
+    try {
+      const snap = await firebase.database()
+        .ref('bolao-cruzeiro-debates/matches')
+        .once('value');
+      const data = snap.val();
+
+      if (data && (data.finished?.length || data.upcoming?.length)) {
+        console.log(`[Cruzeiro ao vivo] Firebase OK — recentes:${data.finished?.length} próximos:${data.upcoming?.length}`);
+        return {
+          finished: data.finished || [],
+          upcoming: data.upcoming || []
+        };
+      }
+    } catch (e) {
+      console.warn('[Firebase matches] falhou:', e.message);
+    }
+  }
+
+  // 2) Worker + football-data.org (se configurado)
   if (WORKER_URL) {
     try {
       const key = window.BOLAO_FOOTBALL_KEY;
       const CRUZEIRO = 1625;
 
-      // Nota: os params de query vão dentro do endpoint para o Worker os repassar correctamente
       const [finRes, schedRes] = await Promise.all([
         fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches%3Fstatus%3DFINISHED%26limit%3D5`, {
           headers: { 'X-Auth-Token': key }
@@ -2029,7 +2048,6 @@ async function fetchCruzeiroMatches() {
       const finished = (finData?.matches || [])
         .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
         .slice(0, 5);
-
       const upcoming = (schedData?.matches || [])
         .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
         .slice(0, 5);
@@ -2052,29 +2070,25 @@ async function fetchCruzeiroMatches() {
         return { finished: finished.map(adapt), upcoming: upcoming.map(adapt) };
       }
     } catch (e) {
-      console.warn('[Worker] falhou, usando fallback:', e.message);
+      console.warn('[Worker] falhou:', e.message);
     }
   }
 
-  // 2) Fallback: TheSportsDB — scan próximos 14 dias + resultados recentes
+  // 3) Fallback: TheSportsDB — eventsday nos próximos 7 dias
   const BASE = 'https://www.thesportsdb.com/api/v1/json/3';
 
-  // Gera array de datas para os próximos 14 dias
-  const dates = Array.from({ length: 14 }, (_, i) => {
+  const dates = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(now + i * 86400000);
     return d.toISOString().substring(0, 10);
   });
 
-  // Busca eventslast por team ID (fiável para resultados)
-  // e eventsday para cada dia (filtrando pelo Cruzeiro por nome — livre de ambiguidade)
   const isCruzeiroByName = (m) =>
     (m.strHomeTeam || '').toLowerCase().includes('cruzeiro') ||
     (m.strAwayTeam || '').toLowerCase().includes('cruzeiro');
 
-  // Só busca os primeiros 7 dias em paralelo para não sobrecarregar
   const [lastR, ...dayResults] = await Promise.allSettled([
     fetch(`${BASE}/eventslast.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
-    ...dates.slice(0, 7).map(date =>
+    ...dates.map(date =>
       fetch(`${BASE}/eventsday.php?d=${date}&s=Soccer`)
         .then(r => r.ok ? r.json() : null)
         .catch(() => null)
@@ -2085,16 +2099,13 @@ async function fetchCruzeiroMatches() {
     ? (lastR.value?.results || []).sort((a, b) => getTime(b) - getTime(a)).slice(0, 5)
     : [];
 
-  // Junta todos os jogos dos dias futuros e filtra pelo Cruzeiro (por nome)
   const upcoming = dayResults
     .flatMap(r => r.status === 'fulfilled' ? (r.value?.events || []) : [])
     .filter(m => isCruzeiroByName(m) && getTime(m) > now)
-    // Exclui Cruzeiro Women / outros Cruzeiros que não sejam da Série A ou Libertadores
     .filter(m => {
-      const league = (m.strLeague || '').toLowerCase();
-      return league.includes('serie a') || league.includes('brasileir') ||
-             league.includes('libertadores') || league.includes('copa do brasil') ||
-             league.includes('copabrasil');
+      const l = (m.strLeague || '').toLowerCase();
+      return l.includes('serie a') || l.includes('brasileir') ||
+             l.includes('libertadores') || l.includes('copa do brasil');
     })
     .sort((a, b) => getTime(a) - getTime(b))
     .slice(0, 5);
