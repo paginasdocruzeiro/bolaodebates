@@ -289,9 +289,6 @@ async function initializeDataSource() {
   });
 
   firebaseSyncEnabled = true;
-
-  // Inicializar chat
-  initChat();
 }
 
 // Returns the Firebase Anonymous UID for the current session.
@@ -1311,6 +1308,9 @@ function renderSidebarUser() {
   el('sidebarUserName').textContent = user ? user.name : 'Visitante';
   el('sidebarUserMeta').textContent = user ? (user.isAdmin ? 'Administrador' : 'Participante') : 'Faça login para apostar';
   el('adminNavBtn').classList.toggle('hidden', !user?.isAdmin);
+  el('iaNavBtn')?.classList.toggle('hidden', !user);
+  el('sofascoreNavBtn')?.classList.toggle('hidden', !user);
+  el('chatNavBtn')?.classList.toggle('hidden', !user);
 }
 
 function renderHome() {
@@ -1443,15 +1443,11 @@ function renderDashboard() {
     </div>` : '';
 
   const dashboardExtra = `
-    <div id="liveScoreDisplay" class="hidden" style="margin:8px 0;"></div>
     <p style="margin:6px 0 2px;"><strong>Jogo:</strong> ${formatDateTime(round.matchTime)}</p>
     <p style="margin:0 0 2px;"><strong>Prazo:</strong> ${formatDateTime(round.deadline)} (${APP_TIMEZONE_LABEL})</p>
     ${progressBar}
   `;
   renderMatchHeader('dashboardNextMatch', round, dashboardExtra);
-  // Tentar placar ao vivo se o jogo for hoje
-  const matchDate = new Date(parseAppDateTime(round.matchTime)).toDateString();
-  if (matchDate === new Date().toDateString()) startLiveScore(round);
 
   el('userPerformanceCard').innerHTML = userRanking ? `
     <p><strong>Posição atual:</strong> ${userRanking.position}º</p>
@@ -1961,10 +1957,9 @@ function renderPlayersList() {
           <tr style="border-top:1px solid var(--line);">
             <td style="padding:8px 6px;">${u.name}${u.isAdmin ? ' <span style="color:var(--gold);font-size:.75rem;">admin</span>' : ''}</td>
             <td style="padding:8px 6px;">${u.basePoints}</td>
-            <td style="padding:8px 6px;">${u.pin ? '✅' : '<span style="color:var(--text-3)">—</span>'}</td>
-            <td style="padding:8px 6px;display:flex;gap:6px;flex-wrap:wrap;">
-              ${u.pin ? `<button class="btn btn-ghost" style="padding:5px 8px;font-size:.75rem;" onclick="resetPlayerPin('${u.id}')">🔑 Reset PIN</button>` : ''}
-              ${!u.isAdmin ? `<button class="btn btn-ghost" style="padding:5px 8px;font-size:.75rem;" onclick="removePlayer('${u.id}')">🗑️ Remover</button>` : ''}
+            <td style="padding:8px 6px;">${u.pin ? '✅' : '—'}</td>
+            <td style="padding:8px 6px;">
+              ${!u.isAdmin ? `<button class="btn btn-ghost" style="padding:6px 10px;font-size:.78rem;" onclick="removePlayer('${u.id}')">Remover</button>` : ''}
             </td>
           </tr>
         `).join('')}
@@ -1974,229 +1969,41 @@ function renderPlayersList() {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════
-// RESET DE PIN
-// ═══════════════════════════════════════════════════════════════════
-
-function resetPlayerPin(userId) {
-  const user = state.users.find(u => u.id === userId);
-  if (!user) return;
-  if (!confirm(`Resetar o PIN de "${user.name}"? Ele precisará criar um novo PIN no próximo acesso.`)) return;
-  user.pin = null;
-  saveState('users');
-  renderPlayersList();
-  showToast(`PIN de ${user.name} resetado com sucesso.`);
+// ── SofaScore Widget ──────────────────────────────────────────────
+function renderSofaScore() {
+  // Widget já está no HTML, nada a renderizar dinamicamente
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// HISTÓRICO DE RODADAS NO ADMIN
-// ═══════════════════════════════════════════════════════════════════
-
-function renderAdminRoundsHistory() {
-  const wrap = document.getElementById('adminRoundsHistoryWrap');
-  if (!wrap) return;
-
-  const sorted = [...state.rounds].sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime));
-
-  if (!sorted.length) {
-    wrap.innerHTML = '<p class="muted">Nenhuma rodada registrada ainda.</p>';
-    return;
-  }
-
-  wrap.innerHTML = `
-    <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
-      <thead><tr>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Rodada</th>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Adversário</th>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Competição</th>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Data</th>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Resultado</th>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Estado</th>
-        <th style="padding:10px 8px;color:var(--text-2);text-align:left;">Apostas</th>
-        <th style="padding:10px 8px;"></th>
-      </tr></thead>
-      <tbody>
-        ${sorted.map(r => {
-          const hasResult = r.resultCruzeiro !== null && r.resultOpponent !== null;
-          const betsCount = getBetsArray().filter(b => b.roundId === r.id).length;
-          const state_ = effectiveRoundState(r);
-          const stateColors = {
-            finalized: 'var(--green)', open: 'var(--accent-soft)',
-            closed: 'var(--yellow)', upcoming: 'var(--gold)', result: 'var(--green)'
-          };
-          return `<tr style="border-top:1px solid var(--line);">
-            <td style="padding:10px 8px;font-weight:600;">${r.title}</td>
-            <td style="padding:10px 8px;">Cruzeiro x ${r.opponent}</td>
-            <td style="padding:10px 8px;color:var(--text-2);">${r.competition}</td>
-            <td style="padding:10px 8px;color:var(--text-2);font-size:.82rem;">${formatDateTime(r.matchTime)}</td>
-            <td style="padding:10px 8px;font-weight:700;">${hasResult ? `${r.resultCruzeiro}x${r.resultOpponent}` : '—'}</td>
-            <td style="padding:10px 8px;color:${stateColors[state_] || 'var(--text-2)'};">${roundStateLabel(r)}</td>
-            <td style="padding:10px 8px;">${betsCount}/${state.users.length}</td>
-            <td style="padding:10px 8px;">
-              <button class="btn btn-ghost" style="padding:5px 10px;font-size:.78rem;" onclick="editRoundFromHistory('${r.id}')">✏️ Editar</button>
-            </td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>
-  `;
-}
-
-function editRoundFromHistory(roundId) {
-  // Muda para a aba de rodadas e seleciona esta rodada
-  document.querySelectorAll('#adminTabBar .tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('#adminContent .tab-pane').forEach(p => p.classList.add('hidden'));
-  document.getElementById('tab-admin-rounds').classList.remove('hidden');
-  document.querySelector('[data-tab="tab-admin-rounds"]').classList.add('active');
-
-  const select = document.getElementById('roundSelect');
-  if (select) {
-    select.value = roundId;
-    populateRoundForm(roundId);
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// EXPORTAR HISTÓRICO EM PDF
-// ═══════════════════════════════════════════════════════════════════
-
-function exportHistoryPdf() {
-  const selected = document.getElementById('historyPlayerSelect')?.value || state.users[0]?.name;
-  const history = getUserHistory(selected);
-  const ranking = calculateRankings().find(x => x.name === selected);
-
-  const rows = history.map(item => `
-    <tr>
-      <td>${item.title}</td>
-      <td>Cruzeiro x ${item.opponent}</td>
-      <td>${item.competition}</td>
-      <td>${item.betLabel}</td>
-      <td>${item.resultLabel}</td>
-      <td>${item.pointsLabel}</td>
-    </tr>
-  `).join('');
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8">
-      <title>Histórico — ${selected}</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 30px; color: #111; }
-        h1 { font-size: 1.4rem; margin-bottom: 4px; }
-        .sub { color: #555; font-size: .9rem; margin-bottom: 20px; }
-        .stats { display: flex; gap: 24px; margin-bottom: 24px; padding: 14px; background: #f5f5f5; border-radius: 8px; }
-        .stat label { display: block; font-size: .75rem; color: #888; text-transform: uppercase; }
-        .stat strong { font-size: 1.3rem; font-weight: 800; }
-        table { width: 100%; border-collapse: collapse; font-size: .88rem; }
-        th { background: #f0f0f0; padding: 10px 8px; text-align: left; font-weight: 600; }
-        td { padding: 9px 8px; border-bottom: 1px solid #eee; }
-        tr:last-child td { border-bottom: none; }
-        .footer { margin-top: 24px; color: #999; font-size: .78rem; }
-      </style>
-    </head>
-    <body>
-      <h1>🏆 Bolão Cruzeiro Debates — Histórico de ${selected}</h1>
-      <p class="sub">Temporada 2026 · Gerado em ${new Date().toLocaleDateString('pt-BR')}</p>
-      <div class="stats">
-        <div class="stat"><label>Posição</label><strong>${ranking?.position ?? '—'}º</strong></div>
-        <div class="stat"><label>Pontos</label><strong>${ranking?.totalPoints ?? 0}</strong></div>
-        <div class="stat"><label>Exatos</label><strong>${ranking?.exact ?? 0}</strong></div>
-        <div class="stat"><label>Parciais</label><strong>${ranking?.partial ?? 0}</strong></div>
-        <div class="stat"><label>Rodadas</label><strong>${history.length}</strong></div>
-      </div>
-      <table>
-        <thead><tr>
-          <th>Rodada</th><th>Jogo</th><th>Competição</th>
-          <th>Palpite</th><th>Resultado</th><th>Pontos</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p class="footer">Bolão do Cruzeiro Debates · paginasdocruzeiro.github.io/bolaodebates</p>
-    </body>
-    </html>
-  `;
-
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank');
-  if (win) {
-    win.onload = () => { win.print(); URL.revokeObjectURL(url); };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// PLACAR AO VIVO
-// ═══════════════════════════════════════════════════════════════════
-
-let liveScoreInterval = null;
-
-async function fetchLiveScore(round) {
-  if (!round || !window.BOLAO_FOOTBALL_KEY) return null;
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const data = await fetchFootballData(`teams/${CRUZEIRO_ID}/matches?dateFrom=${today}&dateTo=${today}&status=IN_PLAY`);
-    const match = data?.matches?.[0];
-    if (!match) return null;
-    const isCruzeiroHome = match.homeTeam.id === CRUZEIRO_ID;
-    return {
-      cruzeiro: isCruzeiroHome ? match.score.fullTime.home ?? match.score.halfTime.home : match.score.fullTime.away ?? match.score.halfTime.away,
-      opponent: isCruzeiroHome ? match.score.fullTime.away ?? match.score.halfTime.away : match.score.fullTime.home ?? match.score.halfTime.home,
-      minute: match.minute || null,
-      status: match.status
-    };
-  } catch { return null; }
-}
-
-async function startLiveScore(round) {
-  stopLiveScore();
-  const liveEl = document.getElementById('liveScoreDisplay');
-  if (!liveEl) return;
-
-  const update = async () => {
-    const score = await fetchLiveScore(round);
-    if (!score) { liveEl.classList.add('hidden'); return; }
-    liveEl.classList.remove('hidden');
-    liveEl.innerHTML = `
-      <div style="display:inline-flex;align-items:center;gap:12px;padding:8px 16px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);border-radius:14px;">
-        <span style="color:var(--red);font-size:.78rem;font-weight:700;animation:pulse-text 1s infinite;">🔴 AO VIVO</span>
-        <span style="font-size:1.4rem;font-weight:900;">Cruzeiro ${score.cruzeiro ?? '?'} x ${score.opponent ?? '?'} ${round.opponent}</span>
-        ${score.minute ? `<span style="color:var(--text-2);font-size:.82rem;">${score.minute}'</span>` : ''}
-      </div>
-    `;
-  };
-
-  await update();
-  liveScoreInterval = setInterval(update, 60000); // atualiza a cada 1 min
-}
-
-function stopLiveScore() {
-  if (liveScoreInterval) clearInterval(liveScoreInterval);
-  liveScoreInterval = null;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// CHAT EM TEMPO REAL (Firebase)
-// ═══════════════════════════════════════════════════════════════════
-
-let chatDbRef = null;
-let chatListener = null;
+// ── Chat público e admin separados ────────────────────────────────
+let chatPublicRef = null;
+let chatAdminRef = null;
+let chatPublicListener = null;
+let chatAdminListener = null;
 
 function initChat() {
-  if (!window.firebase || !firebaseDbRef) return;
+  if (!window.firebase || !window.firebase.database) return;
   const db = firebase.database();
-  chatDbRef = db.ref('bolao-cruzeiro-debates/chat');
 
-  // Escutar mensagens em tempo real
-  if (chatListener) chatDbRef.off('value', chatListener);
-  chatListener = chatDbRef.limitToLast(50).on('child_added', (snap) => {
+  // Chat público — todos os logados
+  chatPublicRef = db.ref('bolao-cruzeiro-debates/chat/public');
+  if (chatPublicListener) chatPublicRef.off('child_added', chatPublicListener);
+  chatPublicListener = chatPublicRef.limitToLast(60).on('child_added', snap => {
     const msg = snap.val();
-    if (msg) renderChatMessage(msg);
+    if (msg) renderChatMessage(msg, 'chatMessagesWrapMain', false);
   });
+
+  // Chat admin — só admins
+  if (isAdmin()) {
+    chatAdminRef = db.ref('bolao-cruzeiro-debates/chat/admin');
+    if (chatAdminListener) chatAdminRef.off('child_added', chatAdminListener);
+    chatAdminListener = chatAdminRef.limitToLast(60).on('child_added', snap => {
+      const msg = snap.val();
+      if (msg) renderChatMessage(msg, 'chatMessagesWrapAdmin', true);
+    });
+  }
 }
 
-function renderChatMessage(msg) {
+function renderChatMessage(msg, containerId, isAdmin_) {
   const user = currentUser();
   const isMe = msg.userName === user?.name;
   const time = new Date(msg.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -2204,32 +2011,33 @@ function renderChatMessage(msg) {
   const msgHTML = `
     <div style="display:flex;flex-direction:column;align-items:${isMe ? 'flex-end' : 'flex-start'};">
       ${!isMe ? `<span style="font-size:.72rem;color:var(--text-3);margin-bottom:3px;">${msg.userName}</span>` : ''}
-      <div style="max-width:75%;padding:10px 14px;border-radius:${isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};background:${isMe ? 'var(--active)' : 'rgba(255,255,255,.07)'};color:var(--text);font-size:.92rem;word-break:break-word;">
-        ${msg.text}
+      <div style="max-width:78%;padding:10px 14px;border-radius:${isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px'};background:${isMe ? 'var(--active)' : 'rgba(255,255,255,.07)'};color:var(--text);font-size:.92rem;word-break:break-word;">
+        ${msg.text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}
       </div>
       <span style="font-size:.7rem;color:var(--text-3);margin-top:3px;">${time}</span>
     </div>
   `;
 
-  // Adicionar nas duas views de chat
-  ['chatMessagesWrap', 'chatMessagesWrapMain'].forEach(id => {
-    const wrap = document.getElementById(id);
-    if (!wrap) return;
-    wrap.insertAdjacentHTML('beforeend', msgHTML);
-    wrap.scrollTop = wrap.scrollHeight;
-  });
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  wrap.insertAdjacentHTML('beforeend', msgHTML);
+  wrap.scrollTop = wrap.scrollHeight;
 }
 
-function sendChatMessage(inputId) {
+function sendChatMessage(inputId, isAdminChat = false) {
   const user = currentUser();
   if (!user) { showToast('Faça login para usar o chat.'); return; }
-  if (!chatDbRef) { showToast('Chat não disponível.'); return; }
+
+  const ref = isAdminChat ? chatAdminRef : chatPublicRef;
+  if (!ref) { showToast('Chat não disponível.'); return; }
+
+  if (isAdminChat && !isAdmin()) { showToast('Apenas admins podem escrever aqui.'); return; }
 
   const input = document.getElementById(inputId);
   const text = input?.value?.trim();
   if (!text) return;
 
-  chatDbRef.push({
+  ref.push({
     userName: user.name,
     text,
     createdAt: new Date().toISOString()
@@ -2238,63 +2046,13 @@ function sendChatMessage(inputId) {
   input.value = '';
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// SISTEMA DE TEMPORADAS
-// ═══════════════════════════════════════════════════════════════════
-
-async function archiveSeason() {
-  if (!isAdmin()) return;
-  const year = new Date().getFullYear();
-  if (!confirm(`Arquivar a temporada ${year}? As rodadas e apostas atuais serão arquivadas e o bolão será reiniciado para ${year + 1}. O ranking de pontos base será atualizado com os pontos atuais.`)) return;
-
-  const ranking = calculateRankings();
-
-  // Arquivar no Firebase
-  if (firebaseDbRef) {
-    const db = firebase.database();
-    await db.ref(`bolao-cruzeiro-debates/seasons/${year}`).set({
-      rounds: state.rounds,
-      bets: state.bets,
-      finalRanking: ranking.map(u => ({ name: u.name, totalPoints: u.totalPoints, exact: u.exact, partial: u.partial })),
-      archivedAt: new Date().toISOString()
-    });
-  }
-
-  // Atualizar pontos base com os pontos da temporada
-  state.users.forEach(u => {
-    const r = ranking.find(x => x.name === u.name);
-    if (r) {
-      u.basePoints = r.totalPoints;
-      u.baseExact = r.exact;
-      u.basePartial = r.partial;
-      u.pin = null; // Reset de PIN opcional — remover esta linha se não quiser
-    }
-  });
-
-  // Reiniciar rodadas e apostas
-  state.rounds = [];
-  state.bets = {};
-  state.initialRankingSnapshot = state.users.map(u => ({ name: u.name, points: u.basePoints }));
-  state.lastRoundHighlight = { text: `Temporada ${year} arquivada. Bem-vindos a ${year + 1}!`, player: '' };
-
-  saveState('all');
-  showToast(`Temporada ${year} arquivada com sucesso! 🏆`);
-  renderAll(currentRoute);
+function renderChat() {
+  if (!currentUser()) { navigate('login'); return; }
+  if (!chatPublicRef) initChat();
 }
 
-function setupAdminTabs() {
-  document.querySelectorAll('#adminTabBar .tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#adminTabBar .tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('#adminContent .tab-pane').forEach(p => p.classList.add('hidden'));
-      btn.classList.add('active');
-      const target = document.getElementById(btn.dataset.tab);
-      if (target) {
-        target.classList.remove('hidden');
-        if (btn.dataset.tab === 'tab-admin-history') renderAdminRoundsHistory();
-      }
-    });
-  });
+function renderIA() {
+  if (!currentUser()) { navigate('login'); return; }
 }
 
 function renderAdmin() {
@@ -2304,13 +2062,12 @@ function renderAdmin() {
   if (!isAdmin()) {
     guard.classList.remove('hidden');
     content.classList.add('hidden');
-    guard.innerHTML = '<p>Apenas Ivo, Samuel e Gabriel podem acessar esta área.</p>';
+    guard.innerHTML = '<p>Apenas Ivo, Samuel e Gabriel podem aceder a esta área.</p>';
     return;
   }
 
   guard.classList.add('hidden');
   content.classList.remove('hidden');
-  setupAdminTabs();
 
   el('roundSelect').innerHTML = state.rounds.map(r => `<option value="${r.id}">${r.title}, Cruzeiro x ${r.opponent}</option>`).join('');
   if (!el('roundSelect').value && state.rounds[0]) el('roundSelect').value = state.rounds[0].id;
@@ -2337,8 +2094,7 @@ function renderAdmin() {
     uidWrap.innerHTML = uid
       ? `<span class="sidebar-user-label">O teu UID Firebase</span>
          <code style="word-break:break-all;font-size:.82rem;color:var(--accent-soft)">${uid}</code>
-         <span class="muted" style="font-size:.78rem">Compartilhe esse valor com o Ivo para ser registrado como admin.</span>
-         <button class="btn btn-danger" style="margin-top:10px;font-size:.82rem;padding:8px 14px;" onclick="archiveSeason()">🗄️ Arquivar temporada atual</button>`
+         <span class="muted" style="font-size:.78rem">Compartilhe esse valor com o Ivo para ser registrado como admin.</span>`
       : `<span class="muted" style="font-size:.78rem">UID não disponível (modo local).</span>`;
   }
 }
@@ -2507,6 +2263,9 @@ const ROUTE_RENDERS = {
   history:   ['renderHistory'],
   stats:     ['renderStats'],
   admin:     ['renderAdmin'],
+  ia:        ['renderIA'],
+  sofascore: ['renderSofaScore'],
+  chat:      ['renderChat'],
   print:     ['renderCurrentPrint']
 };
 
@@ -2727,15 +2486,17 @@ function setupEvents() {
 
   el('triggerPrintBtn').addEventListener('click', () => window.print());
 
-  // Chat
-  el('chatSendBtn')?.addEventListener('click', () => sendChatMessage('chatInput'));
-  el('chatInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage('chatInput'); });
-  el('chatSendBtnMain')?.addEventListener('click', () => sendChatMessage('chatInputMain'));
-  el('chatInputMain')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage('chatInputMain'); });
-  el('chatNavBtn')?.addEventListener('click', () => navigate('chat'));
+  // Chat público
+  el('chatSendBtnMain')?.addEventListener('click', () => sendChatMessage('chatInputMain', false));
+  el('chatInputMain')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage('chatInputMain', false); });
 
-  // Exportar PDF histórico
-  el('exportHistoryPdfBtn')?.addEventListener('click', exportHistoryPdf);
+  // Chat admin
+  el('chatSendBtnAdmin')?.addEventListener('click', () => sendChatMessage('chatInputAdmin', true));
+  el('chatInputAdmin')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage('chatInputAdmin', true); });
+
+  // Navegação
+  el('sofascoreNavBtn')?.addEventListener('click', () => navigate('sofascore'));
+  el('chatNavBtn')?.addEventListener('click', () => navigate('chat'));
 
   el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
   el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
