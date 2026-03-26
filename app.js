@@ -1292,6 +1292,8 @@ async function loginOrRegister(name, pin) {
   saveState('users');
   saveSession(user);
   el('logoutBtn').classList.remove('hidden');
+  // Inicia o chat logo após login para que as mensagens estejam prontas
+  if (firebaseSyncEnabled && !chatInitialized) initChat();
   navigate('round');
   showToast(`Bem-vindo, ${user.name}.`);
   return true;
@@ -1967,41 +1969,147 @@ function renderPlayersList() {
 }
 
 
-// ── SofaScore Widget ──────────────────────────────────────────────
-function renderSofaScore() {
-  // Widget já está no HTML, nada a renderizar dinamicamente
+// ── Painel "Ao Vivo" — jogos do Cruzeiro via football-data.org ──────
+let sofascoreLoaded = false;
+
+async function renderSofaScore() {
+  if (!currentUser()) return; // secção só visível após login
+  const panel = el('sofascoreContent');
+  if (!panel) return;
+
+  // Só carrega uma vez por sessão para não esgotar rate limit
+  if (sofascoreLoaded) return;
+  sofascoreLoaded = true;
+
+  const key = window.BOLAO_FOOTBALL_KEY;
+  if (!key || key === 'cole_o_seu_token_aqui') {
+    panel.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">API de futebol não configurada.</p>`;
+    return;
+  }
+
+  panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos...</div>`;
+
+  try {
+    // Busca jogos do Cruzeiro: passados (FINISHED) e futuros (SCHEDULED/TIMED)
+    const [finRes, schedRes] = await Promise.all([
+      fetch(`https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches?status=FINISHED&limit=5`, { headers: { 'X-Auth-Token': key } }),
+      fetch(`https://api.football-data.org/v4/teams/${CRUZEIRO_ID}/matches?status=SCHEDULED,TIMED&limit=5`, { headers: { 'X-Auth-Token': key } })
+    ]);
+
+    const finData   = finRes.ok   ? await finRes.json()   : null;
+    const schedData = schedRes.ok ? await schedRes.json() : null;
+
+    const finished  = (finData?.matches   || []).slice(-5).reverse();
+    const upcoming  = (schedData?.matches || []).slice(0, 5);
+
+    let html = '';
+
+    if (upcoming.length) {
+      html += `<div style="margin-bottom:20px;">
+        <div class="mini-label" style="margin-bottom:10px;">Próximos jogos</div>
+        ${upcoming.map(m => matchRowHTML(m, false)).join('')}
+      </div>`;
+    }
+
+    if (finished.length) {
+      html += `<div>
+        <div class="mini-label" style="margin-bottom:10px;">Resultados recentes</div>
+        ${finished.map(m => matchRowHTML(m, true)).join('')}
+      </div>`;
+    }
+
+    if (!html) {
+      html = `<p class="muted" style="padding:24px;text-align:center;">Sem jogos disponíveis neste momento.</p>`;
+    }
+
+    panel.innerHTML = html;
+
+  } catch (e) {
+    panel.innerHTML = `<p class="muted" style="padding:24px;text-align:center;">Erro ao carregar jogos. Tente novamente mais tarde.</p>`;
+  }
+}
+
+function matchRowHTML(m, finished) {
+  const isCruzeiroHome = m.homeTeam?.id === CRUZEIRO_ID;
+  const homeTeam = m.homeTeam?.shortName || m.homeTeam?.name || '?';
+  const awayTeam = m.awayTeam?.shortName || m.awayTeam?.name || '?';
+  const homeCrest = getLocalCrest(m.homeTeam?.name || '');
+  const awayCrest = getLocalCrest(m.awayTeam?.name || '');
+  const competition = m.competition?.name || '';
+  const dateStr = m.utcDate
+    ? new Intl.DateTimeFormat('pt-BR', { timeZone: APP_TIMEZONE, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(m.utcDate))
+    : '';
+
+  let scoreHTML = '';
+  if (finished && m.score?.fullTime) {
+    const gh = m.score.fullTime.home ?? '?';
+    const ga = m.score.fullTime.away ?? '?';
+    const cruzeiroGoals = isCruzeiroHome ? gh : ga;
+    const opponentGoals = isCruzeiroHome ? ga : gh;
+    const won  = cruzeiroGoals > opponentGoals;
+    const drew = cruzeiroGoals === opponentGoals;
+    const resultColor = won ? 'var(--green,#39d98a)' : drew ? 'var(--gold,#ffd76b)' : 'var(--red,#ff6b6b)';
+    scoreHTML = `<span style="font-size:1.15rem;font-weight:800;color:${resultColor};min-width:52px;text-align:center;">${gh} – ${ga}</span>`;
+  } else {
+    scoreHTML = `<span style="font-size:.82rem;color:var(--text-3);min-width:52px;text-align:center;">${dateStr}</span>`;
+  }
+
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);">
+      <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;">
+        ${crestImgHTML(homeCrest, homeTeam, 24)}
+        <span style="font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${homeTeam}</span>
+      </div>
+      ${scoreHTML}
+      <div style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;justify-content:flex-end;">
+        <span style="font-size:.88rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${awayTeam}</span>
+        ${crestImgHTML(awayCrest, awayTeam, 24)}
+      </div>
+    </div>
+    <div style="font-size:.75rem;color:var(--text-3);padding:2px 0 6px;">${competition}${finished ? '' : ' · ' + dateStr}</div>
+  `;
 }
 
 // ── Chat público e admin separados ────────────────────────────────
-let chatPublicRef = null;
-let chatAdminRef = null;
+let chatPublicRef = null;   // ref base para escrita
+let chatAdminRef = null;    // ref base para escrita (admin)
 let chatPublicListener = null;
 let chatAdminListener = null;
+let chatInitialized = false;
 
 function initChat() {
   if (!window.firebase || !window.firebase.database) return;
+  if (chatInitialized) return; // evita registar listeners duplicados
+  chatInitialized = true;
+
   const db = firebase.database();
 
-  // Chat público — todos os logados
+  // Referências base (para push/escrita)
   chatPublicRef = db.ref('bolao-cruzeiro-debates/chat/public');
-  if (chatPublicListener) chatPublicRef.off('child_added', chatPublicListener);
-  chatPublicListener = chatPublicRef.limitToLast(60).on('child_added', snap => {
+  chatAdminRef  = db.ref('bolao-cruzeiro-debates/chat/admin');
+
+  // Listener público — limpa container antes de carregar as últimas 60 msgs
+  const publicWrap = document.getElementById('chatMessagesWrapMain');
+  if (publicWrap) publicWrap.innerHTML = '';
+
+  chatPublicRef.limitToLast(60).on('child_added', snap => {
     const msg = snap.val();
-    if (msg) renderChatMessage(msg, 'chatMessagesWrapMain', false);
+    if (msg) renderChatMessage(msg, 'chatMessagesWrapMain');
   });
 
-  // Chat admin — só admins
+  // Listener admin — só admins
   if (isAdmin()) {
-    chatAdminRef = db.ref('bolao-cruzeiro-debates/chat/admin');
-    if (chatAdminListener) chatAdminRef.off('child_added', chatAdminListener);
-    chatAdminListener = chatAdminRef.limitToLast(60).on('child_added', snap => {
+    const adminWrap = document.getElementById('chatMessagesWrapAdmin');
+    if (adminWrap) adminWrap.innerHTML = '';
+
+    chatAdminRef.limitToLast(60).on('child_added', snap => {
       const msg = snap.val();
-      if (msg) renderChatMessage(msg, 'chatMessagesWrapAdmin', true);
+      if (msg) renderChatMessage(msg, 'chatMessagesWrapAdmin');
     });
   }
 }
 
-function renderChatMessage(msg, containerId, isAdmin_) {
+function renderChatMessage(msg, containerId) {
   const user = currentUser();
   const isMe = msg.userName === user?.name;
   const time = new Date(msg.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -2026,8 +2134,11 @@ function sendChatMessage(inputId, isAdminChat = false) {
   const user = currentUser();
   if (!user) { showToast('Faça login para usar o chat.'); return; }
 
+  // Garante que as refs estão inicializadas
+  if (!chatPublicRef) initChat();
+
   const ref = isAdminChat ? chatAdminRef : chatPublicRef;
-  if (!ref) { showToast('Chat não disponível.'); return; }
+  if (!ref) { showToast('Chat não disponível (Firebase não ligado).'); return; }
 
   if (isAdminChat && !isAdmin()) { showToast('Apenas admins podem escrever aqui.'); return; }
 
@@ -2035,18 +2146,23 @@ function sendChatMessage(inputId, isAdminChat = false) {
   const text = input?.value?.trim();
   if (!text) return;
 
+  // push() direto na ref base — não na query limitToLast()
   ref.push({
     userName: user.name,
     text,
     createdAt: new Date().toISOString()
+  }).catch(err => {
+    console.error('Erro ao enviar mensagem:', err);
+    showToast('Erro ao enviar mensagem.');
   });
 
   input.value = '';
 }
 
 function renderChat() {
-  if (!currentUser()) return; // chat section is hidden when not logged in
-  if (!chatPublicRef) initChat();
+  if (!currentUser()) return;
+  // Inicia o chat apenas uma vez, depois que o Firebase está pronto
+  if (!chatInitialized && firebaseSyncEnabled) initChat();
 }
 
 function renderIA() {
@@ -2256,7 +2372,7 @@ function navigate(route) {
 // Maps each route to the render functions it needs.
 // Always-rendered (sidebar, logout btn, page meta) run unconditionally.
 const ROUTE_RENDERS = {
-  home:      ['renderHome', 'renderChat'],
+  home:      ['renderHome', 'renderSofaScore', 'renderChat'],
   round:     ['renderDashboard', 'renderRound'],
   ranking:   ['renderRanking'],
   history:   ['renderHistory'],
@@ -2284,7 +2400,7 @@ function renderAll(route) {
   const fn_map = {
     renderHome, renderLoginOptions, updateLoginHint, renderDashboard,
     renderRanking, renderRound, renderHistory, renderStats, renderAdmin,
-    renderChat, renderCurrentPrint
+    renderSofaScore, renderChat, renderCurrentPrint
   };
   (ROUTE_RENDERS[target] || []).forEach(fnName => {
     if (fn_map[fnName]) fn_map[fnName]();
@@ -2301,24 +2417,33 @@ function setupEvents() {
   el('openWhatsBtn').addEventListener('click', openWhatsAppShare);
   el('missingBetsBtn')?.addEventListener('click', openMissingBetsWhatsApp);
 
-  // Tab switching — works for any .tab-bar inside the active view
+  // Tab switching — robusto para qualquer .tab-bar
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('.tab-btn');
     if (!btn) return;
     const bar = btn.closest('.tab-bar');
     if (!bar) return;
-    const view = btn.closest('.view') || btn.closest('.tab-bar')?.parentElement;
+
+    // Marca botão activo
     bar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
+
     const targetId = btn.dataset.tab;
-    // Find all tab-panes that are siblings of this tab-bar
+    if (!targetId) return;
+
+    // Encontra o container pai (irmão do tab-bar ou o pai directo)
     const container = bar.parentElement;
-    container.querySelectorAll('.tab-pane').forEach(pane => {
-      pane.classList.toggle('hidden', pane.id !== targetId);
-      pane.classList.toggle('active', pane.id === targetId);
+
+    // Esconde todos os tab-pane dentro do container e mostra só o alvo
+    container.querySelectorAll(':scope > .tab-pane').forEach(pane => {
+      const isTarget = pane.id === targetId;
+      pane.classList.toggle('hidden', !isTarget);
+      pane.classList.toggle('active', isTarget);
     });
-    // Trigger stats render when stats tab is clicked
+
+    // Trigger específico para certas abas
     if (targetId === 'tab-stats') renderStats();
+    if (targetId === 'tab-admin-chat' && isAdmin() && firebaseSyncEnabled && !chatInitialized) initChat();
   });
 
   el('loginName').addEventListener('change', updateLoginHint);
@@ -2502,6 +2627,8 @@ async function init() {
   await initializeDataSource();
   setupEvents();
   el('logoutBtn').classList.toggle('hidden', !session.user);
+  // Se já há sessão restaurada (reload da página), inicia o chat
+  if (session.user && firebaseSyncEnabled && !chatInitialized) initChat();
   renderAll(session.user ? 'round' : 'home');
 }
 
