@@ -1990,7 +1990,7 @@ function renderPlayersList() {
 let sofascoreLoading = false;
 
 // ID do Cruzeiro na TheSportsDB
-const THESPORTSDB_TEAM_ID = 146322;
+const THESPORTSDB_TEAM_ID = 134294;
 
 async function renderSofaScore() {
   if (!currentUser()) return;
