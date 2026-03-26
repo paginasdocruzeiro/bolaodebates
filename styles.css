@@ -514,3 +514,6 @@ td:has(.avatar-initial) { white-space: nowrap; }
 #chatMessagesWrapMain::-webkit-scrollbar-track { background: transparent; }
 #chatMessagesWrap::-webkit-scrollbar-thumb,
 #chatMessagesWrapMain::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+
+/* ── Admin players table action cells ── */
+.players-actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
