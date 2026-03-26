@@ -353,12 +353,13 @@
 
           <div id="adminContent" class="hidden">
 
-            <div class="tab-bar" id="adminTabBar" style="margin-bottom:22px;">
-              <button class="tab-btn active" data-tab="tab-admin-rounds">⚽ Rodadas</button>
-              <button class="tab-btn" data-tab="tab-admin-players">👥 Participantes</button>
-              <button class="tab-btn" data-tab="tab-admin-history">📋 Histórico</button>
-              <button class="tab-btn" data-tab="tab-admin-chat">🔐 Chat Admin</button>
-            </div>
+            <div id="adminTabsContainer">
+              <div class="tab-bar" id="adminTabBar" style="margin-bottom:22px;">
+                <button class="tab-btn active" data-tab="tab-admin-rounds">⚽ Rodadas</button>
+                <button class="tab-btn" data-tab="tab-admin-players">👥 Participantes</button>
+                <button class="tab-btn" data-tab="tab-admin-history">📋 Histórico</button>
+                <button class="tab-btn" data-tab="tab-admin-chat">🔐 Chat Admin</button>
+              </div>
 
             <div id="tab-admin-rounds" class="tab-pane active">
               <div class="section-grid two-col">
@@ -492,6 +493,8 @@
                 </div>
               </article>
             </div><!-- /tab-admin-chat -->
+
+            </div><!-- /adminTabsContainer -->
 
           </div>
         </section>
