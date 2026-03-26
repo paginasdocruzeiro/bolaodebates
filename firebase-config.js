@@ -9,5 +9,6 @@ window.BOLAO_FIREBASE_CONFIG = {
 };
 
 window.BOLAO_FIREBASE_PATH = "bolao-cruzeiro-debates/state";
-window.BOLAO_GEMINI_KEY = "";
+window.BOLAO_GEMINI_KEY = "SUBSTITUA_PELA_SUA_KEY_AQUI";
 window.BOLAO_FOOTBALL_KEY = "f6a28bbf32734ec9a90f7f9a5c9e7f04";
+window.BOLAO_WORKER_URL = "https://football-proxy.ivochagas.workers.dev";
