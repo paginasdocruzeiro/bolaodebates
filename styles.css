@@ -515,5 +515,40 @@ td:has(.avatar-initial) { white-space: nowrap; }
 #chatMessagesWrap::-webkit-scrollbar-thumb,
 #chatMessagesWrapMain::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
 
+/* ── Botões estilo iOS — translúcidos com blur ── */
+.ios-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: 980px;
+  font-size: .78rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: filter .15s ease, transform .1s ease, opacity .15s ease;
+  letter-spacing: .01em;
+}
+.ios-btn:hover  { filter: brightness(1.18); transform: translateY(-1px); }
+.ios-btn:active { filter: brightness(.9);  transform: translateY(0); transition-duration:.06s; }
+
+.ios-btn-blue   { background: rgba(59, 130, 246, 0.18);  color: #93c5fd; }
+.ios-btn-green  { background: rgba(16, 185, 129, 0.18);  color: #6ee7b7; }
+.ios-btn-yellow { background: rgba(245, 158, 11, 0.18);  color: #fcd34d; }
+.ios-btn-red    { background: rgba(239, 68, 68, 0.16);   color: #fca5a5; }
+.ios-btn-gray   { background: rgba(148, 163, 184, 0.12); color: #cbd5e1; }
+.ios-btn-purple { background: rgba(139, 92, 246, 0.18);  color: #c4b5fd; }
+
+/* Ação rápida — botões grandes do admin */
+.action-grid .ios-btn {
+  padding: 11px 14px;
+  border-radius: 16px;
+  font-size: .88rem;
+  justify-content: center;
+  width: 100%;
+}
+
 /* ── Admin players table action cells ── */
 .players-actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
