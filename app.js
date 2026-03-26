@@ -1992,7 +1992,6 @@ let sofascoreLoading = false;
 const THESPORTSDB_TEAM_ID = 134294;  // Cruzeiro masculino
 
 // URL do Cloudflare Worker (proxy próprio para football-data.org sem CORS)
-// Configurar conforme README_WORKER.md
 const WORKER_URL = window.BOLAO_WORKER_URL || null;
 
 async function fetchCruzeiroMatches() {
@@ -2000,23 +1999,26 @@ async function fetchCruzeiroMatches() {
 
   const getTime = (m) => {
     try {
-      const d = m.dateEvent || m.date || m.utcDate;
+      if (m.utcDate) return new Date(m.utcDate).getTime();
+      const d = m.dateEvent || m.date;
       const t = m.strTime || m.time || '12:00:00';
-      return new Date(`${d.substring(0,10)}T${t.substring(0,8)}Z`).getTime();
+      if (!d) return 0;
+      return new Date(`${d.substring(0, 10)}T${t.substring(0, 8)}Z`).getTime();
     } catch { return 0; }
   };
 
-  // ── Via Cloudflare Worker (football-data.org, sem CORS) ──────────────
+  // 1) Fonte principal: Worker + football-data.org
   if (WORKER_URL) {
     try {
       const key = window.BOLAO_FOOTBALL_KEY;
       const CRUZEIRO = 1625;
 
+      // Nota: os params de query vão dentro do endpoint para o Worker os repassar correctamente
       const [finRes, schedRes] = await Promise.all([
-        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches&status=FINISHED&limit=5`, {
+        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches%3Fstatus%3DFINISHED%26limit%3D5`, {
           headers: { 'X-Auth-Token': key }
         }),
-        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches&status=SCHEDULED,TIMED&limit=5`, {
+        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches%3Fstatus%3DSCHEDULED%2CTIMED%26limit%3D5`, {
           headers: { 'X-Auth-Token': key }
         })
       ]);
@@ -2024,52 +2026,53 @@ async function fetchCruzeiroMatches() {
       const finData   = finRes.ok   ? await finRes.json()   : null;
       const schedData = schedRes.ok ? await schedRes.json() : null;
 
-      const finished  = (finData?.matches  || []).slice(-5).reverse();
-      const upcoming  = (schedData?.matches || []).slice(0, 5);
+      const finished = (finData?.matches || [])
+        .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
+        .slice(0, 5);
+
+      const upcoming = (schedData?.matches || [])
+        .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+        .slice(0, 5);
 
       if (finished.length || upcoming.length) {
-        // Adapta formato football-data → formato TheSportsDB para matchRowHTMLSportsDB
         const adapt = (m) => ({
-          idEvent:      m.id,
-          idHomeTeam:   m.homeTeam?.id,
-          idAwayTeam:   m.awayTeam?.id,
-          strHomeTeam:  m.homeTeam?.shortName || m.homeTeam?.name,
-          strAwayTeam:  m.awayTeam?.shortName || m.awayTeam?.name,
+          idEvent:          m.id,
+          idHomeTeam:       m.homeTeam?.id,
+          idAwayTeam:       m.awayTeam?.id,
+          strHomeTeam:      m.homeTeam?.shortName || m.homeTeam?.name,
+          strAwayTeam:      m.awayTeam?.shortName || m.awayTeam?.name,
           strHomeTeamBadge: null,
           strAwayTeamBadge: null,
-          strLeague:    m.competition?.name,
-          dateEvent:    (m.utcDate || '').substring(0, 10),
-          strTime:      (m.utcDate || '').substring(11, 19),
-          intHomeScore: m.score?.fullTime?.home ?? null,
-          intAwayScore: m.score?.fullTime?.away ?? null,
+          strLeague:        m.competition?.name,
+          dateEvent:        (m.utcDate || '').substring(0, 10),
+          strTime:          (m.utcDate || '').substring(11, 19),
+          intHomeScore:     m.score?.fullTime?.home ?? null,
+          intAwayScore:     m.score?.fullTime?.away ?? null,
         });
-        return { upcoming: upcoming.map(adapt), finished: finished.map(adapt) };
+        return { finished: finished.map(adapt), upcoming: upcoming.map(adapt) };
       }
     } catch (e) {
-      console.warn('[Worker] falhou, usando fallback TheSportsDB:', e.message);
+      console.warn('[Worker] falhou, usando fallback:', e.message);
     }
   }
 
-  // ── Fallback: TheSportsDB (apenas resultados recentes são fiáveis) ──────
+  // 2) Fallback: TheSportsDB — usa eventslast e eventsnext por team ID
   const BASE = 'https://www.thesportsdb.com/api/v1/json/3';
-  const [lastR, libertR] = await Promise.allSettled([
+
+  const [lastR, nextR] = await Promise.allSettled([
     fetch(`${BASE}/eventslast.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
-    fetch(`${BASE}/eventsseason.php?id=4501&s=2026`).then(r => r.ok ? r.json() : null),
+    fetch(`${BASE}/eventsnext.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
   ]);
 
-  const isCruzeiroById = (m) =>
-    Number(m.idHomeTeam) === THESPORTSDB_TEAM_ID ||
-    Number(m.idAwayTeam) === THESPORTSDB_TEAM_ID;
-
-  const lastEvents   = lastR.status === 'fulfilled'  ? (lastR.value?.results  || []) : [];
-  const libertEvents = libertR.status === 'fulfilled'
-    ? (libertR.value?.events || []).filter(isCruzeiroById)
+  const finished = lastR.status === 'fulfilled'
+    ? (lastR.value?.results || []).sort((a, b) => getTime(b) - getTime(a)).slice(0, 5)
     : [];
 
-  const finished = [...lastEvents].sort((a, b) => getTime(b) - getTime(a)).slice(0, 5);
-  const upcoming = libertEvents.filter(m => getTime(m) > now).sort((a, b) => getTime(a) - getTime(b)).slice(0, 5);
+  const upcoming = nextR.status === 'fulfilled'
+    ? (nextR.value?.events || []).sort((a, b) => getTime(a) - getTime(b)).slice(0, 5)
+    : [];
 
-  return { upcoming, finished };
+  return { finished, upcoming };
 }
 
 async function renderSofaScore() {
