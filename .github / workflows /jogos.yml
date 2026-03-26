@@ -1,4 +1,4 @@
-name: Fetch Matches
+name: Fetch Matches Cruzeiro
 
 on:
   workflow_dispatch:
