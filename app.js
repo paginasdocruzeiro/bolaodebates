@@ -1989,76 +1989,87 @@ function renderPlayersList() {
 // ── Painel "Ao Vivo" — TheSportsDB (gratuita, sem chave, suporta CORS) ──────
 let sofascoreLoading = false;
 
-const THESPORTSDB_TEAM_ID        = 134294;  // Cruzeiro masculino
-const THESPORTSDB_LEAGUE_ID      = 4335;    // Brasileirão Série A
-const THESPORTSDB_LIBERTADORES_ID = 4501;   // Copa Libertadores
+const THESPORTSDB_TEAM_ID = 134294;  // Cruzeiro masculino
+
+// URL do Cloudflare Worker (proxy próprio para football-data.org sem CORS)
+// Configurar conforme README_WORKER.md
+const WORKER_URL = window.BOLAO_WORKER_URL || null;
 
 async function fetchCruzeiroMatches() {
-  const BASE   = 'https://www.thesportsdb.com/api/v1/json/3';
-  const now    = Date.now();
-  const season = '2026';
+  const now = Date.now();
 
   const getTime = (m) => {
-    try { return new Date(`${m.dateEvent}T${m.strTime || '12:00:00'}Z`).getTime(); }
-    catch { return 0; }
+    try {
+      const d = m.dateEvent || m.date || m.utcDate;
+      const t = m.strTime || m.time || '12:00:00';
+      return new Date(`${d.substring(0,10)}T${t.substring(0,8)}Z`).getTime();
+    } catch { return 0; }
   };
+
+  // ── Via Cloudflare Worker (football-data.org, sem CORS) ──────────────
+  if (WORKER_URL) {
+    try {
+      const key = window.BOLAO_FOOTBALL_KEY;
+      const CRUZEIRO = 1625;
+
+      const [finRes, schedRes] = await Promise.all([
+        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches&status=FINISHED&limit=5`, {
+          headers: { 'X-Auth-Token': key }
+        }),
+        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches&status=SCHEDULED,TIMED&limit=5`, {
+          headers: { 'X-Auth-Token': key }
+        })
+      ]);
+
+      const finData   = finRes.ok   ? await finRes.json()   : null;
+      const schedData = schedRes.ok ? await schedRes.json() : null;
+
+      const finished  = (finData?.matches  || []).slice(-5).reverse();
+      const upcoming  = (schedData?.matches || []).slice(0, 5);
+
+      if (finished.length || upcoming.length) {
+        // Adapta formato football-data → formato TheSportsDB para matchRowHTMLSportsDB
+        const adapt = (m) => ({
+          idEvent:      m.id,
+          idHomeTeam:   m.homeTeam?.id,
+          idAwayTeam:   m.awayTeam?.id,
+          strHomeTeam:  m.homeTeam?.shortName || m.homeTeam?.name,
+          strAwayTeam:  m.awayTeam?.shortName || m.awayTeam?.name,
+          strHomeTeamBadge: null,
+          strAwayTeamBadge: null,
+          strLeague:    m.competition?.name,
+          dateEvent:    (m.utcDate || '').substring(0, 10),
+          strTime:      (m.utcDate || '').substring(11, 19),
+          intHomeScore: m.score?.fullTime?.home ?? null,
+          intAwayScore: m.score?.fullTime?.away ?? null,
+        });
+        return { upcoming: upcoming.map(adapt), finished: finished.map(adapt) };
+      }
+    } catch (e) {
+      console.warn('[Worker] falhou, usando fallback TheSportsDB:', e.message);
+    }
+  }
+
+  // ── Fallback: TheSportsDB (apenas resultados recentes são fiáveis) ──────
+  const BASE = 'https://www.thesportsdb.com/api/v1/json/3';
+  const [lastR, libertR] = await Promise.allSettled([
+    fetch(`${BASE}/eventslast.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
+    fetch(`${BASE}/eventsseason.php?id=4501&s=2026`).then(r => r.ok ? r.json() : null),
+  ]);
 
   const isCruzeiroById = (m) =>
     Number(m.idHomeTeam) === THESPORTSDB_TEAM_ID ||
     Number(m.idAwayTeam) === THESPORTSDB_TEAM_ID;
 
-  // Descobre a ronda actual do Brasileirão para pedir as próximas rondas
-  // Busca os últimos resultados para inferir ronda actual
-  const [lastR, libertR] = await Promise.allSettled([
-    fetch(`${BASE}/eventslast.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
-    fetch(`${BASE}/eventsseason.php?id=${THESPORTSDB_LIBERTADORES_ID}&s=${season}`).then(r => r.ok ? r.json() : null),
-  ]);
-
-  const lastEvents   = lastR.status === 'fulfilled' ? (lastR.value?.results || []) : [];
+  const lastEvents   = lastR.status === 'fulfilled'  ? (lastR.value?.results  || []) : [];
   const libertEvents = libertR.status === 'fulfilled'
     ? (libertR.value?.events || []).filter(isCruzeiroById)
     : [];
 
-  // Inferir ronda actual a partir do último jogo do Brasileirão
-  const lastBrasil = lastEvents
-    .filter(m => (m.strLeague || '').toLowerCase().includes('serie a') || (m.strLeague || '').toLowerCase().includes('brasileir'))
-    .sort((a, b) => getTime(b) - getTime(a))[0];
-  const currentRound = lastBrasil?.intRound ? Number(lastBrasil.intRound) : 1;
+  const finished = [...lastEvents].sort((a, b) => getTime(b) - getTime(a)).slice(0, 5);
+  const upcoming = libertEvents.filter(m => getTime(m) > now).sort((a, b) => getTime(a) - getTime(b)).slice(0, 5);
 
-  // Busca as próximas 4 rondas do Brasileirão em paralelo
-  const roundFetches = [1, 2, 3, 4].map(offset =>
-    fetch(`${BASE}/eventsround.php?id=${THESPORTSDB_LEAGUE_ID}&r=${currentRound + offset}&s=${season}`)
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null)
-  );
-  const roundResults = await Promise.allSettled(roundFetches);
-
-  const brazilUpcoming = roundResults
-    .flatMap(r => r.status === 'fulfilled' ? (r.value?.events || []) : [])
-    .filter(m => isCruzeiroById(m) && getTime(m) > now)
-    .sort((a, b) => getTime(a) - getTime(b));
-
-  // Libertadores futuros
-  const libertUpcoming = libertEvents
-    .filter(m => getTime(m) > now)
-    .sort((a, b) => getTime(a) - getTime(b));
-
-  // Junta e deduplica
-  const allUpcoming = [...brazilUpcoming, ...libertUpcoming]
-    .reduce((acc, m) => {
-      if (!acc.find(x => x.idEvent === m.idEvent)) acc.push(m);
-      return acc;
-    }, [])
-    .sort((a, b) => getTime(a) - getTime(b))
-    .slice(0, 5);
-
-  // Recentes: eventslast já filtrado por team ID, ordena do mais recente
-  const finished = [...lastEvents]
-    .sort((a, b) => getTime(b) - getTime(a))
-    .slice(0, 5);
-
-  console.log(`[Cruzeiro] ronda:${currentRound} recentes:${finished.length} próximos:${allUpcoming.length} (brasil:${brazilUpcoming.length} libert:${libertUpcoming.length})`);
-  return { upcoming: allUpcoming, finished };
+  return { upcoming, finished };
 }
 
 async function renderSofaScore() {
