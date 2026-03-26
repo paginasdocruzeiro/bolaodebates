@@ -1,0 +1,28 @@
+name: Fetch Matches
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and push
+        env:
+          FOOTBALL_KEY: ${{ secrets.BOLAO_FOOTBALL_KEY }}
+          FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
+          FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
+        run: |
+          ID=1625
+          URL="https://api.football-data.org/v4/teams/${ID}/matches"
+          FIN=$(curl -s -H "X-Auth-Token: ${FOOTBALL_KEY}" "${URL}?status=FINISHED&limit=5")
+          SCH=$(curl -s -H "X-Auth-Token: ${FOOTBALL_KEY}" "${URL}?status=SCHEDULED,TIMED&limit=5")
+          DATA=$(node -e "
+            const f=JSON.parse(process.env.FIN||'{\"matches\":[]}');
+            const s=JSON.parse(process.env.SCH||'{\"matches\":[]}');
+            console.log(JSON.stringify({finished:(f.matches||[]).slice(-5).reverse(),upcoming:(s.matches||[]).slice(0,5),updatedAt:new Date().toISOString()}));
+          " FIN="$FIN" SCH="$SCH")
+          curl -s -X PUT -H "Content-Type: application/json" -d "$DATA" \
+            "${FIREBASE_DB_URL}/bolao-cruzeiro-debates/matches.json?auth=${FIREBASE_SECRET}"
