@@ -5,6 +5,8 @@ on:
   schedule:
     - cron: "0 * * * *"
 
+# trigger reindex
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -24,5 +26,7 @@ jobs:
             const s=JSON.parse(process.env.SCH||'{\"matches\":[]}');
             console.log(JSON.stringify({finished:(f.matches||[]).slice(-5).reverse(),upcoming:(s.matches||[]).slice(0,5),updatedAt:new Date().toISOString()}));
           " FIN="$FIN" SCH="$SCH")
+          echo "Data: $DATA"
           curl -s -X PUT -H "Content-Type: application/json" -d "$DATA" \
             "${FIREBASE_DB_URL}/bolao-cruzeiro-debates/matches.json?auth=${FIREBASE_SECRET}"
+          echo "Done"
