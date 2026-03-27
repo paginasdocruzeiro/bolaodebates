@@ -2169,7 +2169,7 @@ function renderAdminMatchAutomation() {
             <tr style="border-top:1px solid var(--line);">
               <td style="padding:8px 6px;">Cruzeiro x ${getOpponentFromMatch(match)}</td>
               <td style="padding:8px 6px;">${match.strLeague || '—'}</td>
-              <td style="padding:8px 6px;">${formatDateTime(`${match.dateEvent}T${match.strTime}`)}</td>
+              <td style="padding:8px 6px;">${formatExternalMatchDateTime(match)}</td>
               <td style="padding:8px 6px;"><button class="ios-btn ios-btn-blue" onclick="importUpcomingMatchById('${match.idEvent}')">Importar</button></td>
             </tr>
           `).join('')}
