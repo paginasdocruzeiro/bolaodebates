@@ -1986,134 +1986,46 @@ function renderPlayersList() {
   `;
 }
 
-// ── Painel "Ao Vivo" — TheSportsDB (gratuita, sem chave, suporta CORS) ──────
+// ── Painel "Ao Vivo" — Firebase (alimentado pelo GitHub Actions) ──────
 let sofascoreLoading = false;
 
-const THESPORTSDB_TEAM_ID = 134294;  // Cruzeiro masculino
-
-// URL do Cloudflare Worker (proxy próprio para football-data.org sem CORS)
-const WORKER_URL = window.BOLAO_WORKER_URL || null;
 
 async function fetchCruzeiroMatches() {
-  const now = Date.now();
-
-  const getTime = (m) => {
-    try {
-      if (m.utcDate) return new Date(m.utcDate).getTime();
-      const d = m.dateEvent || m.date;
-      const t = m.strTime || m.time || '12:00:00';
-      if (!d) return 0;
-      return new Date(`${d.substring(0, 10)}T${t.substring(0, 8)}Z`).getTime();
-    } catch { return 0; }
-  };
-
-  // 1) Fonte principal: Firebase (populado pelo GitHub Actions de hora em hora)
-  if (firebaseSyncEnabled && window.firebase) {
-    try {
-      const snap = await firebase.database()
-        .ref('bolao-cruzeiro-debates/matches')
-        .once('value');
+  try {
+    // Fonte única: Firebase, alimentado pelo GitHub Actions
+    if (typeof firebase !== 'undefined' && firebase.apps?.length) {
+      const snap = await firebase.database().ref('bolao-cruzeiro-debates/matches').once('value');
       const data = snap.val();
-
-      if (data && (data.finished?.length || data.upcoming?.length)) {
-        console.log(`[Cruzeiro ao vivo] Firebase OK — recentes:${data.finished?.length} próximos:${data.upcoming?.length}`);
+      if (data && (Array.isArray(data.finished) || Array.isArray(data.upcoming))) {
         return {
-          finished: data.finished || [],
-          upcoming: data.upcoming || []
+          finished: Array.isArray(data.finished) ? data.finished : [],
+          upcoming: Array.isArray(data.upcoming) ? data.upcoming : []
         };
       }
-    } catch (e) {
-      console.warn('[Firebase matches] falhou:', e.message);
     }
+
+    // Mesmo source de verdade, via REST, apenas se o SDK não estiver disponível
+    const dbUrl = window.BOLAO_FIREBASE_CONFIG?.databaseURL;
+    if (!dbUrl) throw new Error('databaseURL do Firebase não configurada.');
+
+    const res = await fetch(`${dbUrl}/bolao-cruzeiro-debates/matches.json`);
+    if (!res.ok) throw new Error(`Falha ao ler matches no Firebase (${res.status}).`);
+
+    const data = await res.json();
+    if (!data) throw new Error('Nodo matches vazio no Firebase.');
+
+    return {
+      finished: Array.isArray(data.finished) ? data.finished : [],
+      upcoming: Array.isArray(data.upcoming) ? data.upcoming : []
+    };
+  } catch (e) {
+    console.error('[Cruzeiro ao vivo] erro ao carregar do Firebase:', e);
+    return { finished: [], upcoming: [] };
   }
-
-  // 2) Worker + football-data.org (se configurado)
-  if (WORKER_URL) {
-    try {
-      const key = window.BOLAO_FOOTBALL_KEY;
-      const CRUZEIRO = 1625;
-
-      const [finRes, schedRes] = await Promise.all([
-        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches%3Fstatus%3DFINISHED%26limit%3D5`, {
-          headers: { 'X-Auth-Token': key }
-        }),
-        fetch(`${WORKER_URL}?endpoint=teams/${CRUZEIRO}/matches%3Fstatus%3DSCHEDULED%2CTIMED%26limit%3D5`, {
-          headers: { 'X-Auth-Token': key }
-        })
-      ]);
-
-      const finData   = finRes.ok   ? await finRes.json()   : null;
-      const schedData = schedRes.ok ? await schedRes.json() : null;
-
-      const finished = (finData?.matches || [])
-        .sort((a, b) => new Date(b.utcDate) - new Date(a.utcDate))
-        .slice(0, 5);
-      const upcoming = (schedData?.matches || [])
-        .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
-        .slice(0, 5);
-
-      if (finished.length || upcoming.length) {
-        const adapt = (m) => ({
-          idEvent:          m.id,
-          idHomeTeam:       m.homeTeam?.id,
-          idAwayTeam:       m.awayTeam?.id,
-          strHomeTeam:      m.homeTeam?.shortName || m.homeTeam?.name,
-          strAwayTeam:      m.awayTeam?.shortName || m.awayTeam?.name,
-          strHomeTeamBadge: null,
-          strAwayTeamBadge: null,
-          strLeague:        m.competition?.name,
-          dateEvent:        (m.utcDate || '').substring(0, 10),
-          strTime:          (m.utcDate || '').substring(11, 19),
-          intHomeScore:     m.score?.fullTime?.home ?? null,
-          intAwayScore:     m.score?.fullTime?.away ?? null,
-        });
-        return { finished: finished.map(adapt), upcoming: upcoming.map(adapt) };
-      }
-    } catch (e) {
-      console.warn('[Worker] falhou:', e.message);
-    }
-  }
-
-  // 3) Fallback: TheSportsDB — eventsday nos próximos 7 dias
-  const BASE = 'https://www.thesportsdb.com/api/v1/json/3';
-
-  const dates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(now + i * 86400000);
-    return d.toISOString().substring(0, 10);
-  });
-
-  const isCruzeiroByName = (m) =>
-    (m.strHomeTeam || '').toLowerCase().includes('cruzeiro') ||
-    (m.strAwayTeam || '').toLowerCase().includes('cruzeiro');
-
-  const [lastR, ...dayResults] = await Promise.allSettled([
-    fetch(`${BASE}/eventslast.php?id=${THESPORTSDB_TEAM_ID}`).then(r => r.ok ? r.json() : null),
-    ...dates.map(date =>
-      fetch(`${BASE}/eventsday.php?d=${date}&s=Soccer`)
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null)
-    )
-  ]);
-
-  const finished = lastR.status === 'fulfilled'
-    ? (lastR.value?.results || []).sort((a, b) => getTime(b) - getTime(a)).slice(0, 5)
-    : [];
-
-  const upcoming = dayResults
-    .flatMap(r => r.status === 'fulfilled' ? (r.value?.events || []) : [])
-    .filter(m => isCruzeiroByName(m) && getTime(m) > now)
-    .filter(m => {
-      const l = (m.strLeague || '').toLowerCase();
-      return l.includes('serie a') || l.includes('brasileir') ||
-             l.includes('libertadores') || l.includes('copa do brasil');
-    })
-    .sort((a, b) => getTime(a) - getTime(b))
-    .slice(0, 5);
-
-  return { finished, upcoming };
 }
 
 async function renderSofaScore() {
+
   if (!currentUser()) return;
   const panel = el('sofascoreContent');
   if (!panel) return;
