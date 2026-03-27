@@ -381,11 +381,8 @@ function isAdmin() {
   return !!currentUser()?.isAdmin;
 }
 
-function formatExternalMatchDateTime(match) {
-  if (!match?.dateEvent || !match?.strTime) return '—';
-
-  const isoUtc = `${match.dateEvent}T${match.strTime}Z`;
-
+function formatDateTime(iso) {
+  if (!iso) return '-';
   return new Intl.DateTimeFormat('pt-BR', {
     timeZone: APP_TIMEZONE,
     day: '2-digit',
@@ -394,7 +391,7 @@ function formatExternalMatchDateTime(match) {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23'
-  }).format(new Date(isoUtc));
+  }).format(new Date(parseAppDateTime(iso)));
 }
 
 function getRound(roundId) {
@@ -2035,14 +2032,12 @@ function getOpponentFromMatch(match) {
 }
 
 function matchToLocalInput(match) {
-  if (!match?.dateEvent || !match?.strTime) {
-    return toLocalInputInAppTime(new Date());
-  }
+  const iso = match?.dateEvent && match?.strTime
+    ? `${match.dateEvent}T${match.strTime}`
+    : null;
 
-  // Treat API time as UTC explicitly
-  const isoUtc = `${match.dateEvent}T${match.strTime}Z`;
-
-  return toLocalInputInAppTime(new Date(isoUtc));
+  if (!iso) return toLocalInputInAppTime(new Date());
+  return toLocalInputInAppTime(new Date(parseAppDateTime(iso)));
 }
 
 function getAdminImportableUpcomingMatches() {
@@ -2174,7 +2169,7 @@ function renderAdminMatchAutomation() {
             <tr style="border-top:1px solid var(--line);">
               <td style="padding:8px 6px;">Cruzeiro x ${getOpponentFromMatch(match)}</td>
               <td style="padding:8px 6px;">${match.strLeague || '—'}</td>
-              <td style="padding:8px 6px;">${formatExternalMatchDateTime(match)}</td>
+              <td style="padding:8px 6px;">${formatDateTime(`${match.dateEvent}T${match.strTime}`)}</td>
               <td style="padding:8px 6px;"><button class="ios-btn ios-btn-blue" onclick="importUpcomingMatchById('${match.idEvent}')">Importar</button></td>
             </tr>
           `).join('')}
