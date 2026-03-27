@@ -2032,12 +2032,14 @@ function getOpponentFromMatch(match) {
 }
 
 function matchToLocalInput(match) {
+  // Os dados do Sofascore vêm em UTC — adiciona 'Z' para forçar interpretação correcta
   const iso = match?.dateEvent && match?.strTime
-    ? `${match.dateEvent}T${match.strTime}`
+    ? `${match.dateEvent}T${match.strTime}Z`
     : null;
 
   if (!iso) return toLocalInputInAppTime(new Date());
-  return toLocalInputInAppTime(new Date(parseAppDateTime(iso)));
+  // Converte de UTC para horário de Brasília para o input datetime-local
+  return toLocalInputInAppTime(new Date(iso));
 }
 
 function getAdminImportableUpcomingMatches() {
@@ -2169,7 +2171,7 @@ function renderAdminMatchAutomation() {
             <tr style="border-top:1px solid var(--line);">
               <td style="padding:8px 6px;">Cruzeiro x ${getOpponentFromMatch(match)}</td>
               <td style="padding:8px 6px;">${match.strLeague || '—'}</td>
-              <td style="padding:8px 6px;">${formatDateTime(`${match.dateEvent}T${match.strTime}`)}</td>
+              <td style="padding:8px 6px;">${formatDateTime(`${match.dateEvent}T${match.strTime}Z`)}</td>
               <td style="padding:8px 6px;"><button class="ios-btn ios-btn-blue" onclick="importUpcomingMatchById('${match.idEvent}')">Importar</button></td>
             </tr>
           `).join('')}
