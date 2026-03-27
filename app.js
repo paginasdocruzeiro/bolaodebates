@@ -381,8 +381,11 @@ function isAdmin() {
   return !!currentUser()?.isAdmin;
 }
 
-function formatDateTime(iso) {
-  if (!iso) return '-';
+function formatExternalMatchDateTime(match) {
+  if (!match?.dateEvent || !match?.strTime) return '—';
+
+  const isoUtc = `${match.dateEvent}T${match.strTime}Z`;
+
   return new Intl.DateTimeFormat('pt-BR', {
     timeZone: APP_TIMEZONE,
     day: '2-digit',
@@ -391,7 +394,7 @@ function formatDateTime(iso) {
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23'
-  }).format(new Date(parseAppDateTime(iso)));
+  }).format(new Date(isoUtc));
 }
 
 function getRound(roundId) {
