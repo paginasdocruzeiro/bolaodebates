@@ -130,7 +130,8 @@ function buildInitialState() {
       text: 'Pedro Lucas, único com acerto exato, foi o destaque da última rodada.',
       player: 'Pedro Lucas'
     },
-    initialRankingSnapshot: SEED_USERS.map(u => ({ name: u.name, points: u.basePoints }))
+    initialRankingSnapshot: SEED_USERS.map(u => ({ name: u.name, points: u.basePoints })),
+    externalMatches: { upcoming: [], finished: [], updatedAt: null }
   };
 }
 
@@ -160,7 +161,14 @@ function normalizeState(raw) {
     lastRoundHighlight: raw.lastRoundHighlight || base.lastRoundHighlight,
     initialRankingSnapshot: Array.isArray(raw.initialRankingSnapshot)
       ? raw.initialRankingSnapshot
-      : base.initialRankingSnapshot
+      : base.initialRankingSnapshot,
+    externalMatches: raw.externalMatches && typeof raw.externalMatches === 'object'
+      ? {
+          upcoming: Array.isArray(raw.externalMatches.upcoming) ? raw.externalMatches.upcoming : [],
+          finished: Array.isArray(raw.externalMatches.finished) ? raw.externalMatches.finished : [],
+          updatedAt: raw.externalMatches.updatedAt || null
+        }
+      : base.externalMatches
   };
 }
 
@@ -1986,46 +1994,232 @@ function renderPlayersList() {
   `;
 }
 
-// ── Painel "Ao Vivo" — Firebase (alimentado pelo GitHub Actions) ──────
+// ── Painel "Ao Vivo" — TheSportsDB (gratuita, sem chave, suporta CORS) ──────
 let sofascoreLoading = false;
 
+const THESPORTSDB_TEAM_ID = 134294;  // Cruzeiro masculino
+
+// URL do Cloudflare Worker (proxy próprio para football-data.org sem CORS)
+const WORKER_URL = window.BOLAO_WORKER_URL || null;
 
 async function fetchCruzeiroMatches() {
   try {
-    // Fonte única: Firebase, alimentado pelo GitHub Actions
-    if (typeof firebase !== 'undefined' && firebase.apps?.length) {
-      const snap = await firebase.database().ref('bolao-cruzeiro-debates/matches').once('value');
-      const data = snap.val();
-      if (data && (Array.isArray(data.finished) || Array.isArray(data.upcoming))) {
-        return {
-          finished: Array.isArray(data.finished) ? data.finished : [],
-          upcoming: Array.isArray(data.upcoming) ? data.upcoming : []
-        };
-      }
-    }
-
-    // Mesmo source de verdade, via REST, apenas se o SDK não estiver disponível
     const dbUrl = window.BOLAO_FIREBASE_CONFIG?.databaseURL;
-    if (!dbUrl) throw new Error('databaseURL do Firebase não configurada.');
+    if (!dbUrl) throw new Error('Firebase databaseURL não configurado.');
 
     const res = await fetch(`${dbUrl}/bolao-cruzeiro-debates/matches.json`);
-    if (!res.ok) throw new Error(`Falha ao ler matches no Firebase (${res.status}).`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
     const data = await res.json();
-    if (!data) throw new Error('Nodo matches vazio no Firebase.');
-
     return {
-      finished: Array.isArray(data.finished) ? data.finished : [],
-      upcoming: Array.isArray(data.upcoming) ? data.upcoming : []
+      finished: Array.isArray(data?.finished) ? data.finished : [],
+      upcoming: Array.isArray(data?.upcoming) ? data.upcoming : [],
+      updatedAt: data?.updatedAt || null
     };
   } catch (e) {
-    console.error('[Cruzeiro ao vivo] erro ao carregar do Firebase:', e);
-    return { finished: [], upcoming: [] };
+    console.error('[fetchCruzeiroMatches]', e);
+    return { finished: [], upcoming: [], updatedAt: null };
   }
 }
 
-async function renderSofaScore() {
+function getOpponentFromMatch(match) {
+  const CRUZEIRO_IDS = new Set(['1954', '1625']);
+  const home = String(match?.idHomeTeam || '');
+  const away = String(match?.idAwayTeam || '');
+  if (CRUZEIRO_IDS.has(home)) return match?.strAwayTeam || 'Adversário';
+  if (CRUZEIRO_IDS.has(away)) return match?.strHomeTeam || 'Adversário';
+  return match?.strAwayTeam || match?.strHomeTeam || 'Adversário';
+}
 
+function matchToLocalInput(match) {
+  const iso = match?.dateEvent && match?.strTime ? `${match.dateEvent}T${match.strTime}` : null;
+  if (!iso) return toLocalInputInAppTime(new Date());
+  return toLocalInputInAppTime(new Date(parseAppDateTime(iso)));
+}
+
+function getAdminImportableUpcomingMatches() {
+  const matches = Array.isArray(state?.externalMatches?.upcoming) ? state.externalMatches.upcoming : [];
+  const rounds = Array.isArray(state?.rounds) ? state.rounds : [];
+
+  return matches.filter(match => {
+    const opponent = normalizeTeamName(getOpponentFromMatch(match));
+    const league = normalizeTeamName(match?.strLeague || '');
+    const matchDate = match?.dateEvent || '';
+
+    return !rounds.some(round => {
+      const roundOpponent = normalizeTeamName(round?.opponent || '');
+      const roundLeague = normalizeTeamName(round?.competition || '');
+      const roundDate = String(round?.matchTime || '').substring(0, 10);
+      return roundOpponent === opponent && roundDate === matchDate && (!league || !roundLeague || roundLeague === league);
+    });
+  });
+}
+
+function getSuggestedResultMatches() {
+  const matches = Array.isArray(state?.externalMatches?.finished) ? state.externalMatches.finished : [];
+  const rounds = Array.isArray(state?.rounds) ? state.rounds : [];
+  const suggestions = [];
+
+  rounds.forEach(round => {
+    if (round.resultCruzeiro !== null && round.resultOpponent !== null) return;
+
+    const roundOpponent = normalizeTeamName(round?.opponent || '');
+    const roundLeague = normalizeTeamName(round?.competition || '');
+    const roundMs = parseAppDateTime(round?.matchTime || '');
+    if (!roundMs) return;
+
+    const candidate = matches.find(match => {
+      const candidateOpponent = normalizeTeamName(getOpponentFromMatch(match));
+      if (candidateOpponent !== roundOpponent) return false;
+
+      const candidateLeague = normalizeTeamName(match?.strLeague || '');
+      if (roundLeague && candidateLeague && roundLeague !== candidateLeague) return false;
+
+      const matchMs = parseAppDateTime(`${match?.dateEvent || ''}T${match?.strTime || '00:00:00'}`);
+      if (!matchMs) return false;
+      return Math.abs(roundMs - matchMs) <= 72 * 3600000;
+    });
+
+    if (!candidate) return;
+
+    const cruzeiroHome = ['1954', '1625'].includes(String(candidate.idHomeTeam || ''));
+    const resultCruzeiro = cruzeiroHome ? (candidate.intHomeScore ?? null) : (candidate.intAwayScore ?? null);
+    const resultOpponent = cruzeiroHome ? (candidate.intAwayScore ?? null) : (candidate.intHomeScore ?? null);
+
+    if (resultCruzeiro === null || resultOpponent === null) return;
+
+    suggestions.push({ round, match: candidate, resultCruzeiro, resultOpponent });
+  });
+
+  return suggestions;
+}
+
+function importUpcomingMatch(match) {
+  const localMatchTime = matchToLocalInput(match);
+  const matchMs = parseAppDateTime(localMatchTime);
+  const deadline = toLocalInputInAppTime(new Date(matchMs - 30 * 60000));
+
+  const round = {
+    id: crypto.randomUUID(),
+    title: `Rodada ${state.rounds.length + 1}`,
+    opponent: getOpponentFromMatch(match),
+    competition: match.strLeague || 'Competição',
+    matchTime: localMatchTime,
+    deadline,
+    resultCruzeiro: null,
+    resultOpponent: null,
+    manualState: 'upcoming',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  state.rounds.unshift(round);
+  saveState('admin');
+  renderAll('admin');
+  const roundSelect = el('roundSelect');
+  if (roundSelect) roundSelect.value = round.id;
+  populateRoundForm(round.id);
+  showToast(`Jogo importado: Cruzeiro x ${round.opponent}.`);
+}
+
+function applySuggestedResult(roundId) {
+  const suggestion = getSuggestedResultMatches().find(item => item.round.id === roundId);
+  if (!suggestion) {
+    showToast('Nenhum resultado sugerido encontrado para esta rodada.');
+    return;
+  }
+
+  suggestion.round.resultCruzeiro = suggestion.resultCruzeiro;
+  suggestion.round.resultOpponent = suggestion.resultOpponent;
+  suggestion.round.updatedAt = new Date().toISOString();
+
+  saveState('admin');
+  renderAll('admin');
+  const roundSelect = el('roundSelect');
+  if (roundSelect) roundSelect.value = suggestion.round.id;
+  populateRoundForm(suggestion.round.id);
+  showToast(`Resultado sugerido aplicado em ${suggestion.round.title}.`);
+}
+
+function renderAdminMatchAutomation() {
+  const importWrap = el('adminImportUpcomingWrap');
+  const resultsWrap = el('adminSuggestedResultsWrap');
+  if (!importWrap || !resultsWrap) return;
+
+  const importable = getAdminImportableUpcomingMatches();
+  const suggestions = getSuggestedResultMatches();
+
+  if (!importable.length) {
+    importWrap.innerHTML = '<p class="muted">Nenhum jogo novo disponível para importar neste momento.</p>';
+  } else {
+    importWrap.innerHTML = `
+      <div class="notice" style="margin-bottom:12px;">Jogos encontrados no painel “Cruzeiro ao vivo” e ainda não criados como rodada.</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
+        <thead><tr>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Jogo</th>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Competição</th>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Data</th>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Ação</th>
+        </tr></thead>
+        <tbody>
+          ${importable.map(match => `
+            <tr style="border-top:1px solid var(--line);">
+              <td style="padding:8px 6px;">Cruzeiro x ${getOpponentFromMatch(match)}</td>
+              <td style="padding:8px 6px;">${match.strLeague || '—'}</td>
+              <td style="padding:8px 6px;">${formatDateTime(`${match.dateEvent}T${match.strTime}`)}</td>
+              <td style="padding:8px 6px;"><button class="ios-btn ios-btn-blue" onclick="importUpcomingMatchById('${match.idEvent}')">Importar</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  if (!suggestions.length) {
+    resultsWrap.innerHTML = '<p class="muted">Nenhuma rodada pendente com resultado sugerido disponível.</p>';
+  } else {
+    resultsWrap.innerHTML = `
+      <div class="notice" style="margin-bottom:12px;">Resultados encontrados automaticamente nos jogos já concluídos. Revise e aplique manualmente.</div>
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem;">
+        <thead><tr>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Rodada</th>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Resultado</th>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Fonte</th>
+          <th style="padding:8px 6px;text-align:left;color:var(--text-2);">Ação</th>
+        </tr></thead>
+        <tbody>
+          ${suggestions.map(item => `
+            <tr style="border-top:1px solid var(--line);">
+              <td style="padding:8px 6px;">${item.round.title} · Cruzeiro x ${item.round.opponent}</td>
+              <td style="padding:8px 6px;"><strong>${item.resultCruzeiro} x ${item.resultOpponent}</strong></td>
+              <td style="padding:8px 6px;">${item.match.strLeague || 'Jogo concluído'}</td>
+              <td style="padding:8px 6px;display:flex;gap:8px;flex-wrap:wrap;">
+                <button class="ios-btn ios-btn-green" onclick="applySuggestedResult('${item.round.id}')">Aplicar</button>
+                <button class="ios-btn ios-btn-gray" onclick="focusRoundFromSuggestion('${item.round.id}')">Abrir rodada</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+}
+
+function importUpcomingMatchById(idEvent) {
+  const match = (state?.externalMatches?.upcoming || []).find(item => String(item.idEvent) === String(idEvent));
+  if (!match) {
+    showToast('Jogo não encontrado para importação.');
+    return;
+  }
+  importUpcomingMatch(match);
+}
+
+function focusRoundFromSuggestion(roundId) {
+  const roundSelect = el('roundSelect');
+  if (roundSelect) roundSelect.value = roundId;
+  populateRoundForm(roundId);
+  showToast('Rodada carregada no formulário.');
+}
+
+async function renderSofaScore() {
   if (!currentUser()) return;
   const panel = el('sofascoreContent');
   if (!panel) return;
@@ -2036,7 +2230,8 @@ async function renderSofaScore() {
   panel.innerHTML = `<div class="muted" style="text-align:center;padding:32px 0;"><span class="ai-spinner"></span> A carregar jogos do Cruzeiro...</div>`;
 
   try {
-    const { upcoming, finished } = await fetchCruzeiroMatches();
+    const { upcoming, finished, updatedAt } = await fetchCruzeiroMatches();
+    state.externalMatches = { upcoming, finished, updatedAt };
 
     let html = '';
 
@@ -2059,7 +2254,7 @@ async function renderSofaScore() {
     }
 
     html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
-      <span style="font-size:.74rem;color:var(--text-3);">Sofascore · Brasileirão · Copa do Brasil · Libertadores</span>
+      <span style="font-size:.74rem;color:var(--text-3);">Dados sincronizados via Firebase${state?.externalMatches?.updatedAt ? ' · atualizado ' + formatDateTime(state.externalMatches.updatedAt) : ''}</span>
       <button class="ios-btn ios-btn-gray" style="font-size:.78rem;padding:6px 12px;" onclick="reloadSofaScore()">↻ Atualizar</button>
     </div>`;
 
@@ -2396,6 +2591,7 @@ function renderAdmin() {
 
   renderPlayersList();
   renderAdminRoundsHistory();
+  renderAdminMatchAutomation();
 
   // Firebase UID
   const uidWrap = el('adminUidDisplay');
