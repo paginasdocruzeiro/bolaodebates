@@ -2032,12 +2032,14 @@ function getOpponentFromMatch(match) {
 }
 
 function matchToLocalInput(match) {
-  const iso = match?.dateEvent && match?.strTime
-    ? `${match.dateEvent}T${match.strTime}`
-    : null;
+  if (!match?.dateEvent || !match?.strTime) {
+    return toLocalInputInAppTime(new Date());
+  }
 
-  if (!iso) return toLocalInputInAppTime(new Date());
-  return toLocalInputInAppTime(new Date(parseAppDateTime(iso)));
+  // Treat API time as UTC explicitly
+  const isoUtc = `${match.dateEvent}T${match.strTime}Z`;
+
+  return toLocalInputInAppTime(new Date(isoUtc));
 }
 
 function getAdminImportableUpcomingMatches() {
