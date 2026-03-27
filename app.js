@@ -2032,7 +2032,10 @@ function getOpponentFromMatch(match) {
 }
 
 function matchToLocalInput(match) {
-  const iso = match?.dateEvent && match?.strTime ? `${match.dateEvent}T${match.strTime}` : null;
+  const iso = match?.dateEvent && match?.strTime
+    ? `${match.dateEvent}T${match.strTime}`
+    : null;
+
   if (!iso) return toLocalInputInAppTime(new Date());
   return toLocalInputInAppTime(new Date(parseAppDateTime(iso)));
 }
