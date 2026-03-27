@@ -3,9 +3,7 @@ name: Fetch Matches Cruzeiro
 on:
   workflow_dispatch:
   schedule:
-  - cron: "0 */2 * * *"
-
-# trigger reindex
+    - cron: "0 */3 * * *"
 
 jobs:
   fetch:
@@ -13,20 +11,53 @@ jobs:
     steps:
       - name: Fetch and push
         env:
-          FOOTBALL_KEY: ${{ secrets.BOLAO_FOOTBALL_KEY }}
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           FIREBASE_DB_URL: ${{ secrets.FIREBASE_DB_URL }}
           FIREBASE_SECRET: ${{ secrets.FIREBASE_SECRET }}
         run: |
-          ID=1625
-          URL="https://api.football-data.org/v4/teams/${ID}/matches"
-          FIN=$(curl -s -H "X-Auth-Token: ${FOOTBALL_KEY}" "${URL}?status=FINISHED&limit=5")
-          SCH=$(curl -s -H "X-Auth-Token: ${FOOTBALL_KEY}" "${URL}?status=SCHEDULED,TIMED&limit=5")
+          TEAM_ID=1954
+
+          LAST=$(curl -s --request GET \
+            "https://sofascore.p.rapidapi.com/teams/get-last-matches?teamId=${TEAM_ID}&pageIndex=0" \
+            --header "x-rapidapi-host: sofascore.p.rapidapi.com" \
+            --header "x-rapidapi-key: ${RAPIDAPI_KEY}")
+
+          NEXT=$(curl -s --request GET \
+            "https://sofascore.p.rapidapi.com/teams/get-next-matches?teamId=${TEAM_ID}&pageIndex=0" \
+            --header "x-rapidapi-host: sofascore.p.rapidapi.com" \
+            --header "x-rapidapi-key: ${RAPIDAPI_KEY}")
+
+          export LAST
+          export NEXT
+
           DATA=$(node -e "
-            const f=JSON.parse(process.env.FIN||'{\"matches\":[]}');
-            const s=JSON.parse(process.env.SCH||'{\"matches\":[]}');
-            console.log(JSON.stringify({finished:(f.matches||[]).slice(-5).reverse(),upcoming:(s.matches||[]).slice(0,5),updatedAt:new Date().toISOString()}));
-          " FIN="$FIN" SCH="$SCH")
+            const last = JSON.parse(process.env.LAST || '{\"events\":[]}');
+            const next = JSON.parse(process.env.NEXT || '{\"events\":[]}');
+
+            const adapt = (e) => ({
+              idEvent: String(e.id),
+              idHomeTeam: String(e.homeTeam?.id),
+              idAwayTeam: String(e.awayTeam?.id),
+              strHomeTeam: e.homeTeam?.shortName || e.homeTeam?.name,
+              strAwayTeam: e.awayTeam?.shortName || e.awayTeam?.name,
+              strLeague: e.tournament?.name || e.season?.tournament?.name || '',
+              dateEvent: new Date(e.startTimestamp * 1000).toISOString().substring(0,10),
+              strTime: new Date(e.startTimestamp * 1000).toISOString().substring(11,19),
+              intHomeScore: e.homeScore?.current ?? null,
+              intAwayScore: e.awayScore?.current ?? null,
+            });
+
+            const finished = (last.events || []).slice(0,5).map(adapt);
+            const upcoming = (next.events || []).slice(0,5).map(adapt);
+
+            console.log(JSON.stringify({finished, upcoming, updatedAt: new Date().toISOString()}));
+          ")
+
           echo "Data: $DATA"
-          curl -s -X PUT -H "Content-Type: application/json" -d "$DATA" \
+
+          curl -s -X PUT \
+            -H "Content-Type: application/json" \
+            -d "$DATA" \
             "${FIREBASE_DB_URL}/bolao-cruzeiro-debates/matches.json?auth=${FIREBASE_SECRET}"
+
           echo "Done"
