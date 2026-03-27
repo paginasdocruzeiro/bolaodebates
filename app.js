@@ -2059,7 +2059,7 @@ async function renderSofaScore() {
     }
 
     html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;">
-      <span style="font-size:.74rem;color:var(--text-3);">TheSportsDB · Brasileirão · Copa do Brasil · Libertadores</span>
+      <span style="font-size:.74rem;color:var(--text-3);">Sofascore · Brasileirão · Copa do Brasil · Libertadores</span>
       <button class="ios-btn ios-btn-gray" style="font-size:.78rem;padding:6px 12px;" onclick="reloadSofaScore()">↻ Atualizar</button>
     </div>`;
 
