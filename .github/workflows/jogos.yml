@@ -47,8 +47,15 @@ jobs:
               intAwayScore: e.awayScore?.current ?? null,
             });
 
-            const finished = (last.events || []).slice(0,5).map(adapt);
-            const upcoming = (next.events || []).slice(0,5).map(adapt);
+            const finished = (last.events || [])
+              .sort((a, b) => b.startTimestamp - a.startTimestamp)
+              .slice(0, 5)
+              .map(adapt);
+
+            const upcoming = (next.events || [])
+              .sort((a, b) => a.startTimestamp - b.startTimestamp)
+              .slice(0, 5)
+              .map(adapt);
 
             console.log(JSON.stringify({finished, upcoming, updatedAt: new Date().toISOString()}));
           ")
