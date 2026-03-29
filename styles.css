@@ -552,3 +552,112 @@ td:has(.avatar-initial) { white-space: nowrap; }
 
 /* ── Admin players table action cells ── */
 .players-actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* ── Bottom Navigation Bar (mobile only) ── */
+.bottom-nav {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 70;
+    background: rgba(8, 20, 48, 0.96);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-top: 1px solid var(--line);
+    padding: 8px 4px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    gap: 0;
+    justify-content: space-around;
+    align-items: stretch;
+  }
+
+  .bottom-nav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 1;
+    padding: 6px 4px;
+    border-radius: 14px;
+    background: transparent;
+    color: var(--text-3);
+    border: none;
+    cursor: pointer;
+    transition: color .18s ease, background .18s ease, transform .12s ease;
+    min-width: 0;
+    position: relative;
+  }
+
+  .bottom-nav-item::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%) scaleX(0);
+    width: 32px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--accent-soft);
+    transition: transform .2s ease;
+  }
+
+  .bottom-nav-item.active::before {
+    transform: translateX(-50%) scaleX(1);
+  }
+
+  .bottom-nav-item:active {
+    transform: scale(0.92);
+    transition-duration: .06s;
+  }
+
+  .bottom-nav-item.active {
+    color: var(--accent-soft);
+  }
+
+  .bottom-nav-item:not(.active):hover {
+    color: var(--text-2);
+    background: rgba(255,255,255,0.04);
+  }
+
+  .bottom-nav-icon {
+    font-size: 1.35rem;
+    line-height: 1;
+    transition: transform .18s ease;
+  }
+
+  .bottom-nav-item.active .bottom-nav-icon {
+    transform: translateY(-2px);
+  }
+
+  .bottom-nav-label {
+    font-size: .65rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  /* Push content up so bottom nav doesn't overlap it */
+  .content {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+
+  /* Hide bottom nav on print view */
+  #view-print.active ~ .bottom-nav,
+  body:has(#view-print.active) .bottom-nav {
+    display: none;
+  }
+}
+
+@media print {
+  .bottom-nav { display: none !important; }
+}
