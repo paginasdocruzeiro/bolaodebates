@@ -1326,6 +1326,9 @@ function renderSidebarUser() {
   el('sidebarUserName').textContent = user ? user.name : 'Visitante';
   el('sidebarUserMeta').textContent = user ? (user.isAdmin ? 'Administrador' : 'Participante') : 'Faça login para apostar';
   el('adminNavBtn').classList.toggle('hidden', !user?.isAdmin);
+  // Sync bottom nav admin button
+  const bottomNavAdmin = el('bottomNavAdmin');
+  if (bottomNavAdmin) bottomNavAdmin.classList.toggle('hidden', !user?.isAdmin);
 }
 
 function renderHome() {
@@ -2853,9 +2856,12 @@ function navigate(route) {
   views.forEach(view => el(`view-${view}`).classList.remove('active'));
   el(`view-${route}`).classList.add('active');
   document.querySelectorAll('.menu-item[data-route]').forEach(btn => btn.classList.toggle('active', btn.dataset.route === route));
+  document.querySelectorAll('.bottom-nav-item[data-route]').forEach(btn => btn.classList.toggle('active', btn.dataset.route === route));
   updatePageMeta(route);
   renderAll(route);
   el('sidebar').classList.remove('open');
+  // Scroll to top on mobile navigation
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // Maps each route to the render functions it needs.
