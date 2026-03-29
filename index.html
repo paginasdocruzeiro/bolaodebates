@@ -525,6 +525,30 @@
 
   <div class="toast hidden" id="toast"></div>
 
+  <!-- Bottom Navigation Bar (mobile only) -->
+  <nav class="bottom-nav" id="bottomNav">
+    <button class="bottom-nav-item active" data-route="home" aria-label="Home">
+      <span class="bottom-nav-icon">🏠</span>
+      <span class="bottom-nav-label">Home</span>
+    </button>
+    <button class="bottom-nav-item" data-route="round" aria-label="Rodada">
+      <span class="bottom-nav-icon">⚽</span>
+      <span class="bottom-nav-label">Rodada</span>
+    </button>
+    <button class="bottom-nav-item" data-route="ranking" aria-label="Ranking">
+      <span class="bottom-nav-icon">🏆</span>
+      <span class="bottom-nav-label">Ranking</span>
+    </button>
+    <button class="bottom-nav-item" data-route="history" aria-label="Histórico">
+      <span class="bottom-nav-icon">📋</span>
+      <span class="bottom-nav-label">Histórico</span>
+    </button>
+    <button class="bottom-nav-item hidden" data-route="admin" id="bottomNavAdmin" aria-label="Admin">
+      <span class="bottom-nav-icon">⚙️</span>
+      <span class="bottom-nav-label">Admin</span>
+    </button>
+  </nav>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
