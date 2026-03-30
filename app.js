@@ -1237,6 +1237,31 @@ function tableHTML(headers, rows, highlightFirst = false) {
   return `<table><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${tbody}</tbody></table>`;
 }
 
+function mobileCardsHTML(headers, rows, highlightFirst = false, primaryCol = 1, valueCol = 2) {
+  return `<div class="mobile-cards">${rows.map((r, i) => {
+    const isFirst = highlightFirst && i === 0;
+    const goldStyle = isFirst ? ' mobile-card--gold' : '';
+    const pairs = headers.map((h, j) => ({ h, v: r[j] }));
+    const primary = pairs[primaryCol] || pairs[0];
+    const secondary = pairs[valueCol] || pairs[1];
+    const rest = pairs.filter((_, j) => j !== primaryCol && j !== valueCol && j !== 0);
+    const pos = pairs[0];
+    return `<div class="mobile-card${goldStyle}">
+      <div class="mobile-card-top">
+        <span class="mobile-card-pos">${pos.v}</span>
+        <span class="mobile-card-name">${primary.v}</span>
+        <span class="mobile-card-pts">${secondary.h}: <strong>${secondary.v}</strong></span>
+      </div>
+      ${rest.length ? `<div class="mobile-card-meta">${rest.map(p => `<span><em>${p.h}:</em> ${p.v}</span>`).join('')}</div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+function responsiveTableHTML(headers, rows, highlightFirst = false, primaryCol = 1, valueCol = 2) {
+  return tableHTML(headers, rows, highlightFirst) +
+         mobileCardsHTML(headers, rows, highlightFirst, primaryCol, valueCol);
+}
+
 function renderLoginOptions() {
   const select = el('loginName');
   select.innerHTML = '<option value="">Selecione...</option>' + state.users.map(u => `<option value="${u.name}">${u.name}</option>`).join('');
@@ -1538,12 +1563,12 @@ function renderRanking() {
     el('roundRankingWrap').innerHTML = `
       <p><span class="highlight">Jogador(es) da rodada:</span> ${winnerLabel}</p>
       <p><span class="highlight">Maior subida:</span> ${movementBest ? `${movementBest.name} (${movementBest.movementDelta > 0 ? '+' + movementBest.movementDelta : movementBest.movementDelta})` : '—'}</p>
-      ${tableHTML(['Pos.', 'Nome', 'Aposta', 'Pontos', 'Tipo'], roundRanking.map(item => [`${item.position}º`, item.name, item.bet, String(item.points), badge(item.type)]))}
+      ${responsiveTableHTML(['Pos.', 'Nome', 'Aposta', 'Pontos', 'Tipo'], roundRanking.map(item => [`${item.position}º`, item.name, item.bet, String(item.points), badge(item.type)]))}
     `;
   }
 
   // Streak column in overall ranking
-  el('overallRankingWrap').innerHTML = tableHTML(
+  el('overallRankingWrap').innerHTML = responsiveTableHTML(
     ['Pos.', 'Nome', 'Pontos', 'Mov.', 'Exatos', 'Parciais', 'Sequência'],
     ranking.map(item => [
       positionDisplay(item.position),
@@ -1557,7 +1582,7 @@ function renderRanking() {
     true
   );
 
-  el('consistencyWrap').innerHTML = tableHTML(
+  el('consistencyWrap').innerHTML = responsiveTableHTML(
     ['Pos.', 'Nome', 'Média', 'Pontuou', 'Zeros', 'Sem palpite', 'Rodadas'],
     consistency.map(item => [
       positionDisplay(item.position),
@@ -1670,7 +1695,7 @@ function renderRound() {
     ];
   });
 
-  el('roundTableWrap').innerHTML = tableHTML(['Nome', 'Aposta', 'Pontos', 'Tipo de acerto'], rows);
+  el('roundTableWrap').innerHTML = responsiveTableHTML(['Nome', 'Aposta', 'Pontos', 'Tipo de acerto'], rows);
 }
 
 // Called only when state changes (result saved, round finalized).
@@ -1719,7 +1744,7 @@ function renderHistory() {
     </div>
   ` : '';
 
-  el('historyTableWrap').innerHTML = tableHTML(
+  el('historyTableWrap').innerHTML = responsiveTableHTML(
     ['Rodada', 'Jogo', 'Competição', 'Palpite', 'Resultado', 'Pontos', 'Tipo'],
     history.map(item => [
       item.title,
@@ -3136,3 +3161,10 @@ async function init() {
 }
 
 init();
+// ── PWA Service Worker Registration ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .catch(err => console.warn('SW registration failed:', err));
+  });
+}
