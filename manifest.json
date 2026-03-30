@@ -1,0 +1,27 @@
+{
+  "name": "Bolão do Cruzeiro Debates",
+  "short_name": "Bolão 2026",
+  "description": "Palpites, ranking e apostas do Bolão Cruzeiro Debates — Temporada 2026.",
+  "start_url": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#081a39",
+  "theme_color": "#0A1F44",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "Bolao1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "Bolao1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "sports"],
+  "screenshots": []
+}
