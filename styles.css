@@ -661,3 +661,86 @@ td:has(.avatar-initial) { white-space: nowrap; }
 @media print {
   .bottom-nav { display: none !important; }
 }
+
+/* ── Mobile Cards (replaces tables on small screens) ── */
+.mobile-cards {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mobile-card {
+  background: linear-gradient(180deg, rgba(14,35,77,.92), rgba(8,23,52,.92));
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobile-card--gold {
+  border-color: rgba(215,184,107,0.4);
+  background: linear-gradient(180deg, rgba(30,25,10,.95), rgba(14,12,5,.95));
+  box-shadow: 0 0 0 1px rgba(215,184,107,0.15), 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.mobile-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mobile-card-pos {
+  font-size: 1.3rem;
+  line-height: 1;
+  min-width: 28px;
+  text-align: center;
+}
+
+.mobile-card-name {
+  flex: 1;
+  font-weight: 700;
+  font-size: .98rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-card-pts {
+  font-size: .88rem;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.mobile-card-pts strong {
+  color: var(--accent-soft);
+  font-weight: 700;
+}
+
+.mobile-card--gold .mobile-card-pts strong {
+  color: var(--gold);
+}
+
+.mobile-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.mobile-card-meta span {
+  font-size: .8rem;
+  color: var(--text-2);
+}
+
+.mobile-card-meta em {
+  font-style: normal;
+  color: var(--text-3);
+}
+
+@media (max-width: 700px) {
+  .mobile-cards { display: flex; }
+  table { display: none; }
+}
