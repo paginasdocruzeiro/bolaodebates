@@ -504,7 +504,7 @@ function renderMissingBetsPanel() {
 
   // Template de mensagem individual
   const deadline = formatDateTime(round.deadline);
-  const defaultMsg = `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://bolaodocruzeiro.online/`;
+  const defaultMsg = `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://paginasdocruzeiro.github.io/bolaodebates/`;
   const defaultGroupMsg = `⚽ Apostadores em falta para Cruzeiro x ${round.opponent}:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse: https://paginasdocruzeiro.github.io/bolaodebates/`;
 
   const sentCount = missing.filter(u => _reminderState.sent.has(u.name)).length;
@@ -1586,7 +1586,34 @@ function renderHome() {
         <div><span class="mini-label">Parciais</span><div style="font-size:1.4rem;font-weight:800">${userRanking.partial}</div></div>
       </div>
       ${betStatus}
+      <div class="change-pin-wrap">
+        <button class="ios-btn ios-btn-gray" id="changePinToggleBtn">🔑 Alterar PIN</button>
+        <div class="change-pin-form hidden" id="changePinFormInline">
+          <div class="change-pin-fields">
+            <label>PIN atual<input type="password" id="pinOldInput" inputmode="numeric" maxlength="4" placeholder="••••" /></label>
+            <label>Novo PIN<input type="password" id="pinNewInput" inputmode="numeric" maxlength="4" placeholder="••••" /></label>
+            <label>Confirmar<input type="password" id="pinConfirmInput" inputmode="numeric" maxlength="4" placeholder="••••" /></label>
+          </div>
+          <div class="change-pin-actions">
+            <button class="ios-btn ios-btn-green" id="pinSaveBtn">✅ Salvar novo PIN</button>
+            <button class="ios-btn ios-btn-gray" id="pinCancelBtn">Cancelar</button>
+          </div>
+          <div class="change-pin-msg hidden" id="changePinMsg"></div>
+        </div>
+      </div>
     `;
+    // Attach events after innerHTML is set
+    el('changePinToggleBtn')?.addEventListener('click', () => {
+      const form = el('changePinFormInline');
+      const isHidden = form.classList.toggle('hidden');
+      el('changePinToggleBtn').textContent = isHidden ? '🔑 Alterar PIN' : '✖ Fechar';
+      if (!isHidden) el('pinOldInput')?.focus();
+    });
+    el('pinCancelBtn')?.addEventListener('click', () => {
+      el('changePinFormInline')?.classList.add('hidden');
+      el('changePinToggleBtn').textContent = '🔑 Alterar PIN';
+    });
+    el('pinSaveBtn')?.addEventListener('click', () => changeOwnPin());
   }
 }
 
@@ -2861,6 +2888,56 @@ async function resetUserPin(userId) {
   saveState('users');
   showToast(`PIN de ${user.name} redefinido com sucesso.`);
   renderPlayersList();
+}
+
+// ── Alterar o próprio PIN (pelo utilizador logado) ────────────────────────────
+async function changeOwnPin() {
+  const user = currentUser();
+  if (!user) return;
+
+  const pinMsg = el('changePinMsg');
+  const showMsg = (text, isError = false) => {
+    if (!pinMsg) return;
+    pinMsg.textContent = text;
+    pinMsg.className = 'change-pin-msg ' + (isError ? 'change-pin-msg--error' : 'change-pin-msg--ok');
+    pinMsg.classList.remove('hidden');
+  };
+
+  const oldVal     = el('pinOldInput')?.value.trim();
+  const newVal     = el('pinNewInput')?.value.trim();
+  const confirmVal = el('pinConfirmInput')?.value.trim();
+
+  if (!/^\d{4}$/.test(oldVal)) { showMsg('PIN atual inválido — deve ter 4 dígitos.', true); return; }
+  if (!/^\d{4}$/.test(newVal)) { showMsg('Novo PIN inválido — deve ter 4 dígitos.', true); return; }
+  if (newVal !== confirmVal)    { showMsg('Os PINs novos não coincidem.', true); return; }
+  if (oldVal === newVal)        { showMsg('O novo PIN é igual ao atual.', true); return; }
+
+  // Verify current PIN
+  const currentHash    = await hashPin(oldVal, user.id);
+  const currentHashOld = await hashPin(oldVal);           // legacy format
+  const storedPin      = user.pin;
+
+  const storedIsHashed = isPinHashed(storedPin);
+  const matches = storedIsHashed
+    ? (storedPin === currentHash || storedPin === currentHashOld)
+    : (storedPin === oldVal);
+
+  if (!matches) { showMsg('PIN atual incorreto.', true); return; }
+
+  // Save new PIN
+  const newHash  = await hashPin(newVal, user.id);
+  user.pin = newHash;
+  saveState('users');
+
+  showMsg('✅ PIN alterado com sucesso!');
+  el('pinOldInput').value = '';
+  el('pinNewInput').value = '';
+  el('pinConfirmInput').value = '';
+  setTimeout(() => {
+    el('changePinFormInline')?.classList.add('hidden');
+    const btn = el('changePinToggleBtn');
+    if (btn) btn.textContent = '🔑 Alterar PIN';
+  }, 1800);
 }
 
 function populateRoundForm(roundId) {
