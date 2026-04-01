@@ -466,17 +466,11 @@ function getMissingBettors(round = getCurrentRound()) {
 function generateMissingBetsMessage() {
   const round = getCurrentRound();
   if (!round) return 'Sem rodada ativa.';
-
   const missing = getMissingBettors(round);
-
-  if (!missing.length) {
-    return `✅ Todos já apostaram para Cruzeiro x ${round.opponent}`;
-  }
-
-  const list = missing.map(u => u.phone ? `${u.name} (${u.phone})` : u.name).join('\n');
-
+  if (!missing.length) return `✅ Todos já apostaram para Cruzeiro x ${round.opponent}`;
+  const list = missing.map(u => u.name).join(', ');
   return [
-    `⚽ Apostadores em falta para Cruzeiro x ${round.opponent}`,
+    `⚽ Apostadores em falta — Cruzeiro x ${round.opponent}`,
     '',
     list,
     '',
@@ -484,40 +478,188 @@ function generateMissingBetsMessage() {
   ].join('\n');
 }
 
-function openMissingBetsWhatsApp() {
+// ── Novo painel de lembretes ──────────────────────────────────────────────────
+
+// Estado do painel de lembretes (persistido só em memória durante a sessão)
+const _reminderState = { sent: new Set(), queue: [], queueIndex: 0, mode: null };
+
+function renderMissingBetsPanel() {
+  const wrap = el('missingBetsAdminWrap');
+  if (!wrap) return;
+
   const round = getCurrentRound();
-  if (!round) { showToast("Sem rodada ativa."); return; }
+  const state_round = round ? effectiveRoundState(round) : null;
 
-  const missing = getMissingBettors(round);
-  if (!missing.length) { showToast("Todos já apostaram!"); return; }
-
-  const withPhone = missing.filter(u => u.phone);
-  const withoutPhone = missing.filter(u => !u.phone);
-
-  if (!withPhone.length) {
-    const url = `https://wa.me/?text=${encodeURIComponent(generateMissingBetsMessage())}`;
-    window.open(url, "_blank");
+  if (!round || state_round !== 'open') {
+    wrap.innerHTML = `<div class="notice" style="color:var(--text-2);">Sem rodada com apostas abertas.</div>`;
     return;
   }
 
-  const deadline = formatDateTime(round.deadline);
-  const msg = encodeURIComponent(
-    `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://paginasdocruzeiro.github.io/bolaodebates/`
-  );
+  const missing = getMissingBettors(round);
 
-  withPhone.forEach((user, i) => {
-    const phone = user.phone.replace(/\D/g, "");
-    setTimeout(() => {
-      window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
-    }, i * 600);
-  });
+  if (!missing.length) {
+    wrap.innerHTML = `<div class="notice" style="border-color:var(--green);color:var(--green);">✅ Todos já apostaram para Cruzeiro x ${round.opponent}!</div>`;
+    return;
+  }
+
+  // Template de mensagem individual
+  const deadline = formatDateTime(round.deadline);
+  const defaultMsg = `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://paginasdocruzeiro.github.io/bolaodebates/`;
+  const defaultGroupMsg = `⚽ Apostadores em falta para Cruzeiro x ${round.opponent}:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse: https://paginasdocruzeiro.github.io/bolaodebates/`;
+
+  const sentCount = missing.filter(u => _reminderState.sent.has(u.name)).length;
+
+  wrap.innerHTML = `
+    <div class="missing-panel">
+      <div class="missing-panel-header">
+        <span class="mini-label">Apostadores em falta</span>
+        <span class="missing-count-badge">${missing.length} em falta${sentCount ? ` · <span style="color:var(--green)">✅ ${sentCount} lembrete${sentCount > 1 ? 's' : ''} enviado${sentCount > 1 ? 's' : ''}</span>` : ''}</span>
+      </div>
+
+      <div class="missing-checklist" id="missingChecklist">
+        ${missing.map(u => `
+          <label class="missing-check-item ${_reminderState.sent.has(u.name) ? 'sent' : ''}">
+            <input type="checkbox" name="missingUser" value="${u.name}" ${_reminderState.sent.has(u.name) ? 'checked disabled' : 'checked'} />
+            <span class="missing-check-name">${avatarHTML(u.name)} ${u.name}</span>
+            ${u.phone ? `<span class="missing-check-phone">${u.phone}</span>` : `<span class="missing-check-nophone">Sem número</span>`}
+            ${_reminderState.sent.has(u.name) ? `<span class="missing-sent-tag">✅ Enviado</span>` : ''}
+          </label>
+        `).join('')}
+      </div>
+
+      <div class="missing-msg-wrap">
+        <label style="font-size:.82rem;color:var(--text-2);display:grid;gap:6px;margin-bottom:12px;">
+          Mensagem individual (editável)
+          <textarea id="missingMsgTemplate" rows="5" style="font-size:.82rem;">${defaultMsg}</textarea>
+        </label>
+      </div>
+
+      <div class="missing-actions">
+        <button class="ios-btn ios-btn-green" id="missingOneByOneBtn">📲 Enviar um a um</button>
+        <button class="ios-btn ios-btn-blue" id="missingGroupBtn">💬 Mensagem para o grupo</button>
+      </div>
+
+      <div id="missingQueueWrap" class="missing-queue hidden"></div>
+    </div>
+  `;
+
+  // Eventos
+  el('missingOneByOneBtn')?.addEventListener('click', () => startOneByOneReminders(missing, round));
+  el('missingGroupBtn')?.addEventListener('click', () => sendGroupReminder(missing, defaultGroupMsg));
+}
+
+function getSelectedMissing(missing) {
+  const checked = Array.from(document.querySelectorAll('input[name="missingUser"]:checked:not(:disabled)'));
+  const selectedNames = new Set(checked.map(c => c.value));
+  return missing.filter(u => selectedNames.has(u.name));
+}
+
+function startOneByOneReminders(missing, round) {
+  const selected = getSelectedMissing(missing);
+  if (!selected.length) { showToast('Selecione pelo menos um apostador.'); return; }
+
+  const withPhone = selected.filter(u => u.phone);
+  const withoutPhone = selected.filter(u => !u.phone);
+
+  if (!withPhone.length) {
+    showToast(`Nenhum dos selecionados tem número de WhatsApp: ${withoutPhone.map(u => u.name).join(', ')}`);
+    return;
+  }
+
+  _reminderState.queue = withPhone;
+  _reminderState.queueIndex = 0;
+  _reminderState.mode = 'one-by-one';
 
   if (withoutPhone.length) {
-    setTimeout(() => {
-      showToast(`Sem número: ${withoutPhone.map(u => u.name).join(", ")}`);
-    }, withPhone.length * 600 + 200);
+    showToast(`Sem número: ${withoutPhone.map(u => u.name).join(', ')} — serão ignorados.`);
   }
+
+  renderQueueStep(round);
 }
+
+function renderQueueStep(round) {
+  const wrap = el('missingQueueWrap');
+  if (!wrap) return;
+
+  const queue = _reminderState.queue;
+  const idx = _reminderState.queueIndex;
+  const total = queue.length;
+  const sentSoFar = idx; // idx avança após cada envio
+
+  if (idx >= total) {
+    // Todos enviados
+    wrap.classList.remove('hidden');
+    wrap.innerHTML = `
+      <div class="queue-done">
+        ✅ <strong>${total} lembrete${total > 1 ? 's' : ''} enviado${total > 1 ? 's' : ''}!</strong>
+        <button class="ios-btn ios-btn-gray" id="queueResetBtn" style="margin-top:10px;">Fechar</button>
+      </div>
+    `;
+    el('queueResetBtn')?.addEventListener('click', () => {
+      wrap.classList.add('hidden');
+      renderMissingBetsPanel();
+    });
+    return;
+  }
+
+  const user = queue[idx];
+  const msgTemplate = el('missingMsgTemplate')?.value ||
+    `⚽ Olá! Você ainda não apostou no Bolão para Cruzeiro x ${round.opponent}. Prazo: ${formatDateTime(round.deadline)}, ${APP_TIMEZONE_LABEL}. Acesse: https://paginasdocruzeiro.github.io/bolaodebates/`;
+
+  const phone = user.phone.replace(/\D/g, '');
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(msgTemplate)}`;
+
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `
+    <div class="queue-step">
+      <div class="queue-progress">
+        <div class="queue-progress-bar" style="width:${(sentSoFar / total) * 100}%"></div>
+      </div>
+      <p class="queue-counter">${sentSoFar} de ${total} enviado${sentSoFar !== 1 ? 's' : ''}</p>
+      <div class="queue-current">
+        <span>A enviar para:</span>
+        <strong>${avatarHTML(user.name)} ${user.name}</strong>
+        <span class="missing-check-phone">${user.phone}</span>
+      </div>
+      <div class="queue-btns">
+        <a href="${url}" target="_blank" class="ios-btn ios-btn-green" id="queueSendBtn">📲 Abrir WhatsApp → ${user.name}</a>
+        <button class="ios-btn ios-btn-gray" id="queueDoneBtn">✅ Marcado como enviado</button>
+        <button class="ios-btn ios-btn-red" id="queueSkipBtn">⏭ Pular</button>
+      </div>
+    </div>
+  `;
+
+  el('queueDoneBtn')?.addEventListener('click', () => {
+    _reminderState.sent.add(user.name);
+    _reminderState.queueIndex++;
+    renderQueueStep(round);
+    renderMissingBetsPanel(); // atualiza badges
+  });
+
+  el('queueSkipBtn')?.addEventListener('click', () => {
+    _reminderState.queueIndex++;
+    renderQueueStep(round);
+  });
+
+  // Auto-avança para "marcado" se o user clicar no link do WhatsApp
+  el('queueSendBtn')?.addEventListener('click', () => {
+    setTimeout(() => {
+      el('queueDoneBtn')?.focus();
+    }, 800);
+  });
+}
+
+function sendGroupReminder(missing, defaultMsg) {
+  // Usa a mensagem do template se disponível
+  const msg = el('missingMsgTemplate')?.value
+    ? `⚽ Apostadores em falta para o próximo jogo:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPor favor apostem a tempo! 🙏`
+    : defaultMsg;
+
+  const url = `https://wa.me/?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+  showToast('WhatsApp aberto — escolhe o grupo para enviar.');
+}
+
 
 function scorePrediction(predC, predO, realC, realO) {
   if ([predC, predO, realC, realO].some(v => v === null || Number.isNaN(v))) {
@@ -2610,17 +2752,8 @@ function renderAdmin() {
     populateRoundForm(roundSelect.value);
   }
 
-  // Apostadores em falta
-  const missingWrap = el('missingBetsAdminWrap');
-  if (missingWrap) {
-    const round = getCurrentRound();
-    const missing = getMissingBettors(round);
-    missingWrap.innerHTML = round && effectiveRoundState(round) === 'open'
-      ? (missing.length
-          ? `<p><strong>Apostadores em falta:</strong> ${missing.map(u => u.name).join(', ')}</p>`
-          : `<p><strong>Apostadores em falta:</strong> ninguém, todos já apostaram. ✅</p>`)
-      : '<p><strong>Apostadores em falta:</strong> sem rodada aberta.</p>';
-  }
+  // Apostadores em falta — painel completo
+  renderMissingBetsPanel();
 
   renderPlayersList();
   renderAdminRoundsHistory();
@@ -2935,7 +3068,6 @@ function setupEvents() {
   el('shareRankingBtn').addEventListener('click', openWhatsAppShare);
   el('shareRoundBtn').addEventListener('click', openWhatsAppShare);
   el('openWhatsBtn').addEventListener('click', openWhatsAppShare);
-  el('missingBetsBtn')?.addEventListener('click', openMissingBetsWhatsApp);
 
   // Tab switching — robusto para qualquer .tab-bar
   document.addEventListener('click', (e) => {
