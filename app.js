@@ -504,7 +504,7 @@ function renderMissingBetsPanel() {
 
   // Template de mensagem individual
   const deadline = formatDateTime(round.deadline);
-  const defaultMsg = `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://paginasdocruzeiro.github.io/bolaodebates/`;
+  const defaultMsg = `⚽ Olá! Você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}.\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://bolaodocruzeiro.online/`;
   const defaultGroupMsg = `⚽ Apostadores em falta para Cruzeiro x ${round.opponent}:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse: https://paginasdocruzeiro.github.io/bolaodebates/`;
 
   const sentCount = missing.filter(u => _reminderState.sent.has(u.name)).length;
