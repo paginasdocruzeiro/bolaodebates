@@ -950,7 +950,15 @@ function currentStreak(roundScores) {
   }
 
   if (count === 0) return '—';
-  if (scoring) return `🔥 ${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''} pontuando`;
+
+  if (scoring) {
+    // Check if the current streak is ALL exatos
+    const streakEntries = sorted.slice(Math.max(0, lastIdx - count + 1), lastIdx + 1);
+    const allExato = streakEntries.every(e => e.type === 'exato');
+    const label = `${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''}`;
+    if (allExato) return `<span class="streak-exato">🔥🔥 ${label} cravando!</span>`;
+    return `🔥 ${label} pontuando`;
+  }
   return `❄️ ${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''} sem pontuar`;
 }
 
@@ -1556,10 +1564,25 @@ function renderHome() {
       ? getRoundRanking(lastFinalized).filter(r => r.type === 'exato').map(r => r.name)
       : [];
     const lhc = el('lastHighlightCard');
-    if (lhc) lhc.innerHTML = `
-      ${perfectInLast.length ? `<p style="color:var(--gold);font-weight:700">🏆 Rodada perfeita: ${formatNames(perfectInLast)}!</p>` : ''}
-      <p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>
-    `;
+    if (lhc) {
+      const lastClosedG = [...state.rounds]
+        .filter(r => {
+          const rs = effectiveRoundState(r);
+          return (rs === 'finalized' || rs === 'result' || rs === 'closed') && r.resultCruzeiro !== null && r.resultOpponent !== null;
+        })
+        .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
+      const lastClosedRankingG = lastClosedG ? getRoundRanking(lastClosedG) : [];
+      const lastClosedWinnerG = lastClosedRankingG.length ? roundWinnerLabel(lastClosedRankingG) : null;
+      const highlightTextG = lastClosedWinnerG
+        ? (lastClosedWinnerG.points === 0
+            ? 'Ninguém pontuou na última rodada.'
+            : `${lastClosedWinnerG.text} ${lastClosedWinnerG.names.length > 1 ? 'foram os jogadores' : 'foi o jogador'} da última rodada com ${lastClosedWinnerG.points} ponto${lastClosedWinnerG.points !== 1 ? 's' : ''}.`)
+        : state.lastRoundHighlight.text;
+      lhc.innerHTML = `
+        ${perfectInLast.length ? `<p style="color:var(--gold);font-weight:700">🏆 Rodada perfeita: ${formatNames(perfectInLast)}!</p>` : ''}
+        <p class="highlight">🔥 ${highlightTextG}</p>
+      `;
+    }
 
     const upcoming = [...state.rounds]
       .filter(r => effectiveRoundState(r) === 'upcoming')
@@ -1587,7 +1610,22 @@ function renderHome() {
   }
 
   const lhcLogged = el('lastHighlightCardLogged');
-  if (lhcLogged) lhcLogged.innerHTML = `<p class="highlight">🔥 ${state.lastRoundHighlight.text}</p>`;
+  if (lhcLogged) {
+    const lastClosed = [...state.rounds]
+      .filter(r => {
+        const rs = effectiveRoundState(r);
+        return (rs === 'finalized' || rs === 'result' || rs === 'closed') && r.resultCruzeiro !== null && r.resultOpponent !== null;
+      })
+      .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
+    const lastClosedRanking = lastClosed ? getRoundRanking(lastClosed) : [];
+    const lastClosedWinner = lastClosedRanking.length ? roundWinnerLabel(lastClosedRanking) : null;
+    const highlightText = lastClosedWinner
+      ? (lastClosedWinner.points === 0
+          ? 'Ninguém pontuou na última rodada.'
+          : `${lastClosedWinner.text} ${lastClosedWinner.names.length > 1 ? 'foram os jogadores' : 'foi o jogador'} da última rodada com ${lastClosedWinner.points} ponto${lastClosedWinner.points !== 1 ? 's' : ''}.`)
+      : state.lastRoundHighlight.text;
+    lhcLogged.innerHTML = `<p class="highlight">🔥 ${highlightText}</p>`;
+  }
 
   const welcome = el('homeUserWelcome');
   if (welcome && userRanking) {
