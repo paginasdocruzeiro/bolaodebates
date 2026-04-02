@@ -985,3 +985,9 @@ td:has(.avatar-initial) { white-space: nowrap; }
     grid-template-columns: 1fr;
   }
 }
+
+/* ── Streak exato (cravando) ── */
+.streak-exato {
+  color: var(--green);
+  font-weight: 700;
+}
