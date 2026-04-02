@@ -756,7 +756,8 @@ function calculateRankings() {
     let missedRounds = 0;  // não apostou (rodada com resultado)
     let roundScores  = [];
 
-    state.rounds.forEach((round) => {
+    const sortedRounds = [...state.rounds].sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
+    sortedRounds.forEach((round) => {
       if (round.resultCruzeiro === null || round.resultOpponent === null) return;
 
       roundsPlayed += 1;
@@ -883,7 +884,7 @@ function getUserHistory(userName) {
         resultLabel: hasResult ? `${round.resultCruzeiro}x${round.resultOpponent}` : 'A definir',
         betLabel: bet ? `${bet.cruzeiroGoals}x${bet.opponentGoals}` : (didNotBet ? 'Sem palpite' : '-'),
         pointsValue: hasResult ? (score ? score.points : 0) : null,
-        pointsLabel: didNotBet ? '0 (não apostou)' : (hasResult ? `${score ? score.points : 0} ponto(s)` : '-'),
+        pointsLabel: didNotBet ? '0 (não apostou)' : (hasResult ? `${score ? score.points : 0} ${(score && score.points === 1) ? 'ponto' : 'pontos'}` : '-'),
         type: didNotBet ? 'sem aposta' : (score?.type || '-')
       };
     });
@@ -929,8 +930,8 @@ function currentStreak(roundScores) {
     if ((sorted[i].points > 0) === scoring) count++;
     else break;
   }
-  if (scoring) return `🔥 ${count} seguida${count > 1 ? 's' : ''} a pontuar`;
-  return `❄️ ${count} seguida${count > 1 ? 's' : ''} sem pontuar`;
+  if (scoring) return `🔥 ${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''} pontuando`;
+  return `❄️ ${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''} sem pontuar`;
 }
 
 function getStatsSummary() {
@@ -1325,7 +1326,7 @@ RANKING COMPLETO: ${ranking.map(r => `${r.position}º ${r.name} — ${r.totalPoi
 LÍDER: ${lider?.name} com ${lider?.totalPoints} pontos
 LANTERNA: ${lanterna?.name} com ${lanterna?.totalPoints} pontos
 ${round ? `PRÓXIMO JOGO: Cruzeiro x ${round.opponent} — ${round.competition}` : ''}
-${roundRanking.length ? `DESTAQUE DA ÚLTIMA RODADA: ${roundRanking[0]?.name} com ${roundRanking[0]?.points} ponto(s)` : ''}`;
+${roundRanking.length ? `DESTAQUE DA ÚLTIMA RODADA: ${roundRanking[0]?.name} com ${roundRanking[0]?.points} ponto${roundRanking[0]?.points !== 1 ? 's' : ''}` : ''}`;
 
   try {
     const text = await callGemini(prompt);
@@ -1833,7 +1834,7 @@ function renderRound() {
   // Rodada perfeita — só após resultado
   const perfectPlayers = hasResult ? roundRanking.filter(r => r.type === 'exato').map(r => r.name) : [];
   const perfectText = perfectPlayers.length
-    ? `<p>🏆 <strong>Rodada perfeita:</strong> <span class="highlight" style="color:var(--gold)">${formatNames(perfectPlayers)} acertou${perfectPlayers.length > 1 ? 'ram' : ''} o placar exato!</span></p>`
+    ? `<p>🏆 <strong>Rodada perfeita:</strong> <span class="highlight" style="color:var(--gold)">${formatNames(perfectPlayers)} acertar${perfectPlayers.length > 1 ? 'am' : 'ou'} o placar exato!</span></p>`
     : '';
 
   el('roundSummary').innerHTML = `
@@ -1877,7 +1878,7 @@ function updateRoundHighlight(round = getCurrentRound()) {
   const winner = roundWinnerLabel(roundRanking);
   const nextText = winner.points === 0
     ? 'Ninguém pontuou nesta rodada.'
-    : `${winner.text} foi${winner.names.length > 1 ? 'am' : ''} o${winner.names.length > 1 ? 's' : ''} jogador${winner.names.length > 1 ? 'es' : ''} da rodada com ${winner.points} ponto(s).`;
+    : `${winner.text} ${winner.names.length > 1 ? 'foram os jogadores' : 'foi o jogador'} da rodada com ${winner.points} ponto${winner.points !== 1 ? 's' : ''}.`;
   const nextPlayer = winner.names[0] || '';
 
   if (
