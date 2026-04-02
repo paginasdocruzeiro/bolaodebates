@@ -758,7 +758,10 @@ function calculateRankings() {
 
     const sortedRounds = [...state.rounds].sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
     sortedRounds.forEach((round) => {
+      // Only count rounds that have a result AND are closed/finalized (not open/upcoming)
       if (round.resultCruzeiro === null || round.resultOpponent === null) return;
+      const rs = effectiveRoundState(round);
+      if (rs === 'open' || rs === 'upcoming') return;
 
       roundsPlayed += 1;
       const bet = getBet(round.id, user.name);
@@ -922,14 +925,31 @@ function bettingProfile(history) {
 // Returns current streak for a player: consecutive scoring or non-scoring rounds
 function currentStreak(roundScores) {
   if (!roundScores.length) return null;
-  const sorted = [...roundScores]; // already sorted by round order from calculateRankings
-  const last = sorted[sorted.length - 1];
+
+  // Only consider rounds where the user actually placed a bet
+  // Missed rounds (sem aposta) reset the streak
+  const sorted = [...roundScores];
+
+  // Find the last round with a bet placed
+  let lastIdx = sorted.length - 1;
+  while (lastIdx >= 0 && sorted[lastIdx].type === 'sem aposta') lastIdx--;
+
+  // If all rounds were missed, no streak to show
+  if (lastIdx < 0) return '—';
+
+  const last = sorted[lastIdx];
   const scoring = last.points > 0;
   let count = 0;
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    if ((sorted[i].points > 0) === scoring) count++;
+
+  for (let i = lastIdx; i >= 0; i--) {
+    const entry = sorted[i];
+    // sem aposta breaks the streak
+    if (entry.type === 'sem aposta') break;
+    if ((entry.points > 0) === scoring) count++;
     else break;
   }
+
+  if (count === 0) return '—';
   if (scoring) return `🔥 ${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''} pontuando`;
   return `❄️ ${count} rodada${count > 1 ? 's' : ''} seguida${count > 1 ? 's' : ''} sem pontuar`;
 }
@@ -3367,7 +3387,24 @@ async function init() {
   el('logoutBtn').classList.toggle('hidden', !session.user);
   // Se já há sessão restaurada (reload da página), inicia o chat
   if (session.user && firebaseSyncEnabled && !chatInitialized) initChat();
+  // Regenerate lastRoundHighlight from current data to fix any stale Firebase text
+  regenLastRoundHighlight();
   renderAll(session.user ? 'round' : 'home');
+}
+
+// Regenerates lastRoundHighlight from the most recent finalized round with a result.
+// Fixes stale text stored in Firebase from older app versions.
+function regenLastRoundHighlight() {
+  const lastFinalized = [...state.rounds]
+    .filter(r => r.resultCruzeiro !== null && r.resultOpponent !== null)
+    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
+
+  if (!lastFinalized) return;
+  updateRoundHighlight(lastFinalized);
+  // Persist correction silently only if text changed (saveState calls Firebase)
+  if (firebaseSyncEnabled && firebaseDbRef) {
+    firebaseDbRef.update({ lastRoundHighlight: state.lastRoundHighlight });
+  }
 }
 
 init();
