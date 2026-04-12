@@ -604,7 +604,7 @@ function renderQueueStep(round) {
 
   const user = queue[idx];
   const msgTemplate = el('missingMsgTemplate')?.value ||
-    `⚽ Olá! Você ainda não apostou no Bolão para Cruzeiro x ${round.opponent}. Prazo: ${formatDateTime(round.deadline)}, ${APP_TIMEZONE_LABEL}. Acesse: https://bolaodocruzeiro.online/`;
+    `⚽ Fala, mano, bão demais? Passando só para avisar que você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}! 😬\n\nPrazo: ${formatDateTime(round.deadline)}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://bolaodocruzeiro.online/`;
 
   const phone = user.phone.replace(/\D/g, '');
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(msgTemplate)}`;
