@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'bolao-v3';
+const CACHE_VERSION = 'bolao-v4';
 const CACHE_EXTERNAL = 'bolao-external-v1';
 
 const EXTERNAL_ASSETS = [
@@ -9,7 +9,6 @@ const EXTERNAL_ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
 ];
 
-// Helper: só faz cache de URLs http/https
 function isCacheable(url) {
   return url.startsWith('http://') || url.startsWith('https://');
 }
@@ -37,7 +36,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = e.request.url;
 
-  // Ignorar tudo que não seja http/https (chrome-extension, etc.)
+  // Ignorar tudo que não seja http/https
   if (!isCacheable(url)) return;
 
   const parsedUrl = new URL(url);
@@ -61,7 +60,7 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          if (res.ok && isCacheable(e.request.url)) {
+          if (res.ok) {
             const clone = res.clone();
             caches.open(CACHE_VERSION).then(cache => cache.put(e.request, clone));
           }
@@ -70,7 +69,10 @@ self.addEventListener('fetch', e => {
         .catch(() => {
           return caches.match(e.request).then(cached => {
             if (cached) return cached;
+            // Fallback para navegação
             if (e.request.mode === 'navigate') return caches.match('./index.html');
+            // Para imagens/assets em falta — retorna resposta vazia válida
+            return new Response('', { status: 404, statusText: 'Not Found' });
           });
         })
     );
@@ -82,13 +84,15 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       caches.match(e.request).then(cached => {
         if (cached) return cached;
-        return fetch(e.request).then(res => {
-          if (res.ok && isCacheable(e.request.url)) {
-            const clone = res.clone();
-            caches.open(CACHE_EXTERNAL).then(cache => cache.put(e.request, clone));
-          }
-          return res;
-        });
+        return fetch(e.request)
+          .then(res => {
+            if (res.ok) {
+              const clone = res.clone();
+              caches.open(CACHE_EXTERNAL).then(cache => cache.put(e.request, clone));
+            }
+            return res;
+          })
+          .catch(() => new Response('', { status: 404, statusText: 'Not Found' }));
       })
     );
   }
