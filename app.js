@@ -1409,7 +1409,7 @@ function tableHTML(headers, rows, highlightFirst = false) {
 }
 
 function mobileCardsHTML(headers, rows, highlightFirst = false, primaryCol = 1, valueCol = 2) {
-  return `<div class="mobile-cards">${rows.map((r, i) => {
+  return `<div class="mobile-cards" style="display:none">${rows.map((r, i) => {
     const isFirst = highlightFirst && i === 0;
     const goldStyle = isFirst ? ' mobile-card--gold' : '';
     const pairs = headers.map((h, j) => ({ h, v: r[j] }));
