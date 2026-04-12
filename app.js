@@ -3449,13 +3449,7 @@ init();
 // ── PWA Service Worker Registration ──
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    // Primeiro desregista todos os SWs antigos/corrompidos
-    navigator.serviceWorker.getRegistrations().then(registrations => {
-      const unregisterAll = registrations.map(r => r.unregister());
-      return Promise.all(unregisterAll);
-    }).then(() => {
-      // Depois regista o SW novo limpo
-      return navigator.serviceWorker.register('./sw.js');
-    }).catch(err => console.warn('SW error:', err));
+    navigator.serviceWorker.register('./sw.js')
+      .catch(err => console.warn('SW registration failed:', err));
   });
 }
