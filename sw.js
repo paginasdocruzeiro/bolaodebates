@@ -1,12 +1,7 @@
-const CACHE = 'bolao-v1';
-const ASSETS = [
-  './',
-  './index.html',
-  './styles.css',
-  './app.js',
-  './firebase-config.js',
-  './Bolao1.png',
-  './manifest.json',
+const CACHE_VERSION = 'bolao-v3';
+const CACHE_EXTERNAL = 'bolao-external-v1';
+
+const EXTERNAL_ASSETS = [
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js',
@@ -14,55 +9,87 @@ const ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js'
 ];
 
-// Install: cache core assets
+// Helper: só faz cache de URLs http/https
+function isCacheable(url) {
+  return url.startsWith('http://') || url.startsWith('https://');
+}
+
 self.addEventListener('install', e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE_EXTERNAL)
+      .then(cache => cache.addAll(EXTERNAL_ASSETS))
+      .then(() => self.skipWaiting())
   );
 });
 
-// Activate: clean up old caches
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter(k => k !== CACHE_VERSION && k !== CACHE_EXTERNAL)
+          .map(k => caches.delete(k))
+      )
     ).then(() => self.clients.claim())
   );
 });
 
-// Fetch: network-first for Firebase/API, cache-first for static assets
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
+  const url = e.request.url;
 
-  // Always go to network for Firebase, Gemini, Football API, Worker
-  const alwaysNetwork = [
+  // Ignorar tudo que não seja http/https (chrome-extension, etc.)
+  if (!isCacheable(url)) return;
+
+  const parsedUrl = new URL(url);
+
+  // Nunca interceptar Firebase, APIs, Workers
+  const bypassDomains = [
     'firebasedatabase.app',
-    'googleapis.com',
-    'football-proxy',
     'firebaseio.com',
-    'identitytoolkit'
+    'firebaseapp.com',
+    'googleapis.com',
+    'identitytoolkit',
+    'football-proxy',
+    'workers.dev'
   ];
-  if (alwaysNetwork.some(d => url.hostname.includes(d) || url.href.includes(d))) {
-    return; // Let browser handle it normally
+  if (bypassDomains.some(d => url.includes(d))) return;
+
+  // Ficheiros do próprio site → network-first
+  const isOwnFile = parsedUrl.origin === self.location.origin;
+
+  if (isOwnFile && e.request.method === 'GET') {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          if (res.ok && isCacheable(e.request.url)) {
+            const clone = res.clone();
+            caches.open(CACHE_VERSION).then(cache => cache.put(e.request, clone));
+          }
+          return res;
+        })
+        .catch(() => {
+          return caches.match(e.request).then(cached => {
+            if (cached) return cached;
+            if (e.request.mode === 'navigate') return caches.match('./index.html');
+          });
+        })
+    );
+    return;
   }
 
-  // Cache-first for static assets
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(res => {
-        // Cache successful GET responses for static assets
-        if (res.ok && e.request.method === 'GET') {
-          const clone = res.clone();
-          caches.open(CACHE).then(cache => cache.put(e.request, clone));
-        }
-        return res;
-      }).catch(() => {
-        // Offline fallback for navigation requests
-        if (e.request.mode === 'navigate') {
-          return caches.match('./index.html');
-        }
-      });
-    })
-  );
+  // Bibliotecas externas → cache-first
+  if (e.request.method === 'GET') {
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(res => {
+          if (res.ok && isCacheable(e.request.url)) {
+            const clone = res.clone();
+            caches.open(CACHE_EXTERNAL).then(cache => cache.put(e.request, clone));
+          }
+          return res;
+        });
+      })
+    );
+  }
 });
