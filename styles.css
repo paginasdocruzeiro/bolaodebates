@@ -741,8 +741,8 @@ td:has(.avatar-initial) { white-space: nowrap; }
 }
 
 @media (max-width: 700px) {
-  .mobile-cards { display: flex; }
-  table { display: none; }
+  .mobile-cards { display: flex !important; }
+  table { display: none !important; }
 }
 
 /* ── Painel de Lembretes (Missing Bets) ── */
