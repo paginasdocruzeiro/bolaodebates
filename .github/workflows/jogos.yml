@@ -1,10 +1,8 @@
 name: Fetch Matches Cruzeiro
-
 on:
   workflow_dispatch:
   schedule:
     - cron: "0 */4 * * *"
-
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -17,22 +15,23 @@ jobs:
         run: |
           TEAM_ID=1954
 
-          LAST=$(curl -s --request GET \
+          curl -s --request GET \
             "https://sofascore.p.rapidapi.com/teams/get-last-matches?teamId=${TEAM_ID}&pageIndex=0" \
             --header "x-rapidapi-host: sofascore.p.rapidapi.com" \
-            --header "x-rapidapi-key: ${RAPIDAPI_KEY}")
+            --header "x-rapidapi-key: ${RAPIDAPI_KEY}" > /tmp/last.json
 
-          NEXT=$(curl -s --request GET \
+          curl -s --request GET \
             "https://sofascore.p.rapidapi.com/teams/get-next-matches?teamId=${TEAM_ID}&pageIndex=0" \
             --header "x-rapidapi-host: sofascore.p.rapidapi.com" \
-            --header "x-rapidapi-key: ${RAPIDAPI_KEY}")
+            --header "x-rapidapi-key: ${RAPIDAPI_KEY}" > /tmp/next.json
 
-          export LAST
-          export NEXT
+          echo "LAST response: $(cat /tmp/last.json | head -c 200)"
+          echo "NEXT response: $(cat /tmp/next.json | head -c 200)"
 
           DATA=$(node -e "
-            const last = JSON.parse(process.env.LAST || '{\"events\":[]}');
-            const next = JSON.parse(process.env.NEXT || '{\"events\":[]}');
+            const fs = require('fs');
+            const last = JSON.parse(fs.readFileSync('/tmp/last.json', 'utf8'));
+            const next = JSON.parse(fs.readFileSync('/tmp/next.json', 'utf8'));
 
             const adapt = (e) => ({
               idEvent: String(e.id),
