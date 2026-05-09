@@ -23,22 +23,93 @@ let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
 let geminiKey = null;
 
+let privatePhones = {};
+let privatePhonesLoaded = false;
+
+const PRIVATE_PHONES_PATH = 'bolao-cruzeiro-debates/private/phones';
+
+function stripPrivateUserFields(user) {
+  if (!user || typeof user !== 'object') return user;
+  const { phone, ...publicUser } = user;
+  return publicUser;
+}
+
+function getPublicUsers() {
+  return (state?.users || []).map(stripPrivateUserFields);
+}
+
+function phoneKeyForUser(user) {
+  return user?.name || '';
+}
+
+function getPrivatePhone(user) {
+  const key = phoneKeyForUser(user);
+  const entry = privatePhones?.[key];
+
+  if (!entry) return '';
+  if (typeof entry === 'string') return entry;
+  return entry.phone || '';
+}
+
+async function loadPrivatePhonesIfAdmin() {
+  if (!firebaseDbRef || !isAdmin()) {
+    privatePhones = {};
+    privatePhonesLoaded = true;
+    return {};
+  }
+
+  try {
+    const snapshot = await firebase
+      .database()
+      .ref(PRIVATE_PHONES_PATH)
+      .once('value');
+
+    privatePhones = snapshot.val() || {};
+    privatePhonesLoaded = true;
+    return privatePhones;
+  } catch (err) {
+    console.error('Erro ao carregar telefones privados:', err);
+    privatePhones = {};
+    privatePhonesLoaded = true;
+    return {};
+  }
+}
+
+async function savePrivatePhoneForUser(user, phone) {
+  if (!firebaseDbRef || !isAdmin() || !user?.name) return;
+
+  const key = phoneKeyForUser(user);
+  const cleanPhone = String(phone || '').trim();
+  const payload = {
+    name: user.name,
+    phone: cleanPhone,
+    updatedAt: new Date().toISOString()
+  };
+
+  await firebase
+    .database()
+    .ref(`${PRIVATE_PHONES_PATH}/${key}`)
+    .set(payload);
+
+  privatePhones[key] = payload;
+}
+
+
 const SEED_USERS = [
-  ['Davidson', 17, '+553196017445'],
-  ['Gabriel', 14, '+553187076410'],
-  ['Pedro Lucas', 13, '+553798024477'],
-  ['Leandro', 11, '+553192203422'],
-  ['Ivo', 10, '+351935886230'],
-  ['Bruno', 9, '+553187516769'],
-  ['Juliano', 9, '+553798267290'],
-  ['Samuel', 9, '+553799026621'],
-  ['Farlon', 8, '+553799162671'],
-  ['Dente', 8, '+553182494730'],
-  ['Filipe', 7, '+553197878752']
-].map(([name, basePoints, phone]) => ({
+  ['Davidson', 17],
+  ['Gabriel', 14],
+  ['Pedro Lucas', 13],
+  ['Leandro', 11],
+  ['Ivo', 10],
+  ['Bruno', 9],
+  ['Juliano', 9],
+  ['Samuel', 9],
+  ['Farlon', 8],
+  ['Dente', 8],
+  ['Filipe', 7]
+].map(([name, basePoints]) => ({
   id: crypto.randomUUID(),
   name,
-  phone,
   basePoints,
   baseExact: 0,
   basePartial: 0,
@@ -46,7 +117,7 @@ const SEED_USERS = [
   isAdmin: ADMIN_NAMES.includes(name)
 }));
 
-const APP_TIMEZONE = 'America/Sao_Paulo';
+const APP_TIMEZONE =const APP_TIMEZONE = 'America/Sao_Paulo';
 const APP_TIMEZONE_LABEL = 'Horário de Brasília';
 
 function getZonedParts(date = new Date(), timeZone = APP_TIMEZONE) {
@@ -139,12 +210,16 @@ function normalizeState(raw) {
   const base = buildInitialState();
   if (!raw || typeof raw !== 'object') return base;
 
-  // Merge phone from SEED_USERS into users that don't have it (e.g. loaded from Firebase before phone was added)
-  const seedPhoneMap = Object.fromEntries(SEED_USERS.map(u => [u.name, u.phone]));
-  const mergedUsers = (Array.isArray(raw.users) ? raw.users : base.users).map(u => ({
-    ...u,
-    phone: u.phone || seedPhoneMap[u.name] || ''
-  }));
+  const mergedUsers = (Array.isArray(raw.users) ? raw.users : base.users)
+    .filter(Boolean)
+    .map(user => {
+      const publicUser = stripPrivateUserFields(user);
+
+      return {
+        ...publicUser,
+        isAdmin: ADMIN_NAMES.includes(publicUser.name)
+      };
+    });
 
   const normalizedBets = Array.isArray(raw.bets)
     ? Object.fromEntries(
@@ -172,7 +247,7 @@ function normalizeState(raw) {
   };
 }
 
-function applyAdminFlags() {
+function applyAdminFlags()function applyAdminFlags() {
   if (!state?.users) return;
   state.users.forEach(u => {
     u.isAdmin = ADMIN_NAMES.includes(u.name);
@@ -190,10 +265,14 @@ function loadLocalState() {
 }
 
 function persistLocalState() {
+  if (state?.users) {
+    state.users = getPublicUsers();
+  }
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function saveSession(user) {
+function saveSession(user)function saveSession(user) {
   if (!user) return;
   localStorage.setItem(SESSION_KEY, JSON.stringify({
     userId: user.id,
@@ -321,13 +400,19 @@ function saveBetsState() {
 
 function saveUsersState() {
   applyAdminFlags();
+
+  if (state?.users) {
+    state.users = getPublicUsers();
+  }
+
   persistLocalState();
+
   if (firebaseDbRef) {
-    firebaseDbRef.child('users').set(state.users || []);
+    firebaseDbRef.child('users').set(getPublicUsers());
   }
 }
 
-function saveAdminState() {
+function saveAdminState()function saveAdminState() {
   applyAdminFlags();
   persistLocalState();
   if (firebaseDbRef) {
@@ -341,17 +426,21 @@ function saveAdminState() {
 
 function saveState(scope = 'all') {
   applyAdminFlags();
+
+  if (state?.users) {
+    state.users = getPublicUsers();
+  }
+
   persistLocalState();
+
   if (!firebaseDbRef) return;
 
   if (scope === 'bets') {
-    // SEGURO: não faz .set() global — apostas são gravadas individualmente em upsertBet()
-    // Apenas persiste localmente
     return;
   }
 
   if (scope === 'users') {
-    firebaseDbRef.child('users').set(state.users || []);
+    firebaseDbRef.child('users').set(getPublicUsers());
     return;
   }
 
@@ -364,16 +453,15 @@ function saveState(scope = 'all') {
     return;
   }
 
-  // Full sync — nunca inclui bets (cada aposta é gravada individualmente em upsertBet)
   firebaseDbRef.update({
-    users:                  state.users,
+    users:                  getPublicUsers(),
     rounds:                 state.rounds,
     lastRoundHighlight:     state.lastRoundHighlight,
     initialRankingSnapshot: state.initialRankingSnapshot
   });
 }
 
-function currentUser() {
+function currentUser()function currentUser() {
   return session.user;
 }
 
@@ -487,6 +575,18 @@ function renderMissingBetsPanel() {
   const wrap = el('missingBetsAdminWrap');
   if (!wrap) return;
 
+  if (isAdmin() && firebaseDbRef && !privatePhonesLoaded) {
+    wrap.innerHTML = `<div class="notice" style="color:var(--text-2);">A carregar telefones privados...</div>`;
+
+    loadPrivatePhonesIfAdmin()
+      .then(() => renderMissingBetsPanel())
+      .catch(() => {
+        wrap.innerHTML = `<div class="notice" style="color:var(--red);">Erro ao carregar telefones privados.</div>`;
+      });
+
+    return;
+  }
+
   const round = getCurrentRound();
   const state_round = round ? effectiveRoundState(round) : null;
 
@@ -502,7 +602,6 @@ function renderMissingBetsPanel() {
     return;
   }
 
-  // Template de mensagem individual
   const deadline = formatDateTime(round.deadline);
   const defaultMsg = `⚽ Fala, mano, bão demais? Passando só para avisar que você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}! 😬\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://bolaodocruzeiro.online/`;
   const defaultGroupMsg = `⚽ Apostadores em falta para Cruzeiro x ${round.opponent}:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPrazo: ${deadline}, ${APP_TIMEZONE_LABEL}.\n\nAcesse: https://bolaodocruzeiro.online/`;
@@ -517,14 +616,18 @@ function renderMissingBetsPanel() {
       </div>
 
       <div class="missing-checklist" id="missingChecklist">
-        ${missing.map(u => `
-          <label class="missing-check-item ${_reminderState.sent.has(u.name) ? 'sent' : ''}">
-            <input type="checkbox" name="missingUser" value="${u.name}" ${_reminderState.sent.has(u.name) ? 'checked disabled' : 'checked'} />
-            <span class="missing-check-name">${avatarHTML(u.name)} ${u.name}</span>
-            ${u.phone ? `<span class="missing-check-phone">${u.phone}</span>` : `<span class="missing-check-nophone">Sem número</span>`}
-            ${_reminderState.sent.has(u.name) ? `<span class="missing-sent-tag">✅ Enviado</span>` : ''}
-          </label>
-        `).join('')}
+        ${missing.map(u => {
+          const phone = getPrivatePhone(u);
+
+          return `
+            <label class="missing-check-item ${_reminderState.sent.has(u.name) ? 'sent' : ''}">
+              <input type="checkbox" name="missingUser" value="${u.name}" ${_reminderState.sent.has(u.name) ? 'checked disabled' : 'checked'} />
+              <span class="missing-check-name">${avatarHTML(u.name)} ${u.name}</span>
+              ${phone ? `<span class="missing-check-phone">${phone}</span>` : `<span class="missing-check-nophone">Sem número privado</span>`}
+              ${_reminderState.sent.has(u.name) ? `<span class="missing-sent-tag">✅ Enviado</span>` : ''}
+            </label>
+          `;
+        }).join('')}
       </div>
 
       <div class="missing-msg-wrap">
@@ -543,12 +646,11 @@ function renderMissingBetsPanel() {
     </div>
   `;
 
-  // Eventos
   el('missingOneByOneBtn')?.addEventListener('click', () => startOneByOneReminders(missing, round));
   el('missingGroupBtn')?.addEventListener('click', () => sendGroupReminder(missing, defaultGroupMsg));
 }
 
-function getSelectedMissing(missing) {
+function getSelectedMissing(missing)function getSelectedMissing(missing) {
   const checked = Array.from(document.querySelectorAll('input[name="missingUser"]:checked:not(:disabled)'));
   const selectedNames = new Set(checked.map(c => c.value));
   return missing.filter(u => selectedNames.has(u.name));
@@ -556,13 +658,17 @@ function getSelectedMissing(missing) {
 
 function startOneByOneReminders(missing, round) {
   const selected = getSelectedMissing(missing);
-  if (!selected.length) { showToast('Selecione pelo menos um apostador.'); return; }
 
-  const withPhone = selected.filter(u => u.phone);
-  const withoutPhone = selected.filter(u => !u.phone);
+  if (!selected.length) {
+    showToast('Selecione pelo menos um apostador.');
+    return;
+  }
+
+  const withPhone = selected.filter(u => getPrivatePhone(u));
+  const withoutPhone = selected.filter(u => !getPrivatePhone(u));
 
   if (!withPhone.length) {
-    showToast(`Nenhum dos selecionados tem número de WhatsApp: ${withoutPhone.map(u => u.name).join(', ')}`);
+    showToast(`Nenhum dos selecionados tem telefone privado cadastrado: ${withoutPhone.map(u => u.name).join(', ')}`);
     return;
   }
 
@@ -571,23 +677,22 @@ function startOneByOneReminders(missing, round) {
   _reminderState.mode = 'one-by-one';
 
   if (withoutPhone.length) {
-    showToast(`Sem número: ${withoutPhone.map(u => u.name).join(', ')} — serão ignorados.`);
+    showToast(`Sem telefone privado: ${withoutPhone.map(u => u.name).join(', ')} — serão ignorados.`);
   }
 
   renderQueueStep(round);
 }
 
-function renderQueueStep(round) {
+function renderQueueStep(round)function renderQueueStep(round) {
   const wrap = el('missingQueueWrap');
   if (!wrap) return;
 
   const queue = _reminderState.queue;
   const idx = _reminderState.queueIndex;
   const total = queue.length;
-  const sentSoFar = idx; // idx avança após cada envio
+  const sentSoFar = idx;
 
   if (idx >= total) {
-    // Todos enviados
     wrap.classList.remove('hidden');
     wrap.innerHTML = `
       <div class="queue-done">
@@ -595,18 +700,29 @@ function renderQueueStep(round) {
         <button class="ios-btn ios-btn-gray" id="queueResetBtn" style="margin-top:10px;">Fechar</button>
       </div>
     `;
+
     el('queueResetBtn')?.addEventListener('click', () => {
       wrap.classList.add('hidden');
       renderMissingBetsPanel();
     });
+
     return;
   }
 
   const user = queue[idx];
+
   const msgTemplate = el('missingMsgTemplate')?.value ||
     `⚽ Fala, mano, bão demais? Passando só para avisar que você ainda não apostou no Bolão Cruzeiro Debates para o jogo Cruzeiro x ${round.opponent}! 😬\n\nPrazo: ${formatDateTime(round.deadline)}, ${APP_TIMEZONE_LABEL}.\n\nAcesse aqui: https://bolaodocruzeiro.online/`;
 
-  const phone = user.phone.replace(/\D/g, '');
+  const rawPhone = getPrivatePhone(user);
+  const phone = rawPhone.replace(/\D/g, '');
+
+  if (!phone) {
+    _reminderState.queueIndex++;
+    renderQueueStep(round);
+    return;
+  }
+
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(msgTemplate)}`;
 
   wrap.classList.remove('hidden');
@@ -619,7 +735,7 @@ function renderQueueStep(round) {
       <div class="queue-current">
         <span>A enviar para:</span>
         <strong>${avatarHTML(user.name)} ${user.name}</strong>
-        <span class="missing-check-phone">${user.phone}</span>
+        <span class="missing-check-phone">${rawPhone}</span>
       </div>
       <div class="queue-btns">
         <a href="${url}" target="_blank" class="ios-btn ios-btn-green" id="queueSendBtn">📲 Abrir WhatsApp → ${user.name}</a>
@@ -633,7 +749,7 @@ function renderQueueStep(round) {
     _reminderState.sent.add(user.name);
     _reminderState.queueIndex++;
     renderQueueStep(round);
-    renderMissingBetsPanel(); // atualiza badges
+    renderMissingBetsPanel();
   });
 
   el('queueSkipBtn')?.addEventListener('click', () => {
@@ -641,7 +757,6 @@ function renderQueueStep(round) {
     renderQueueStep(round);
   });
 
-  // Auto-avança para "marcado" se o user clicar no link do WhatsApp
   el('queueSendBtn')?.addEventListener('click', () => {
     setTimeout(() => {
       el('queueDoneBtn')?.focus();
@@ -649,7 +764,7 @@ function renderQueueStep(round) {
   });
 }
 
-function sendGroupReminder(missing, defaultMsg) {
+function sendGroupReminder(missing, defaultMsg)function sendGroupReminder(missing, defaultMsg) {
   // Usa a mensagem do template se disponível
   const msg = el('missingMsgTemplate')?.value
     ? `⚽ Apostadores em falta para o próximo jogo:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPor favor apostem a tempo! 🙏\n\nhttps://bolaodocruzeiro.online/`
