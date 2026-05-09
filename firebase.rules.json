@@ -1,0 +1,78 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "bolao-cruzeiro-debates": {
+      "matches": {
+        ".read": true,
+        ".write": false
+      },
+
+      "state": {
+        ".read": "auth != null",
+        ".write": false,
+
+        "bets": {
+          "$betId": {
+            ".write": "auth != null && (root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists() || (!data.exists() && newData.hasChildren(['userId','userName','roundId','cruzeiroGoals','opponentGoals','firebaseUid']) && newData.child('firebaseUid').val() === auth.uid) || (data.exists() && !newData.exists() && (data.child('firebaseUid').val() === auth.uid || root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists())) || (data.exists() && newData.exists() && ((data.child('firebaseUid').val() === auth.uid && newData.child('firebaseUid').val() === auth.uid) || (!data.child('firebaseUid').exists() && newData.child('firebaseUid').val() === auth.uid && data.child('userId').val() === newData.child('userId').val()))))"
+          }
+        },
+
+        "users": {
+          ".write": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()"
+        },
+
+        "rounds": {
+          ".write": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()"
+        },
+
+        "lastRoundHighlight": {
+          ".write": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()"
+        },
+
+        "initialRankingSnapshot": {
+          ".write": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()"
+        }
+      },
+
+      "private": {
+        ".read": false,
+        ".write": false,
+
+        "adminUids": {
+          ".read": false,
+          ".write": false
+        },
+
+        "phones": {
+          ".read": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()",
+          ".write": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()"
+        },
+
+        "geminiKey": {
+          ".read": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()",
+          ".write": false
+        }
+      },
+
+      "chat": {
+        "public": {
+          ".read": "auth != null",
+
+          "$msgId": {
+            ".write": "auth != null && (!data.exists() || (data.exists() && !newData.exists() && (data.child('firebaseUid').val() === auth.uid || root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists())))"
+          }
+        },
+
+        "admin": {
+          ".read": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()",
+
+          "$msgId": {
+            ".write": "auth != null && root.child('bolao-cruzeiro-debates/private/adminUids/' + auth.uid).exists()"
+          }
+        }
+      }
+    }
+  }
+}
