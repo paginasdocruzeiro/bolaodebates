@@ -1,2 +1,4 @@
 # Dados privados gerados pela migração do bolão
 private-phones.generated.json
+app.js.backup-*
+apply-privacy-migration.js
