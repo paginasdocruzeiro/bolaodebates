@@ -515,19 +515,38 @@ function getCurrentRound() {
 
 function effectiveRoundState(round) {
   if (!round) return 'none';
-  if (round.manualState && round.manualState !== 'auto') return round.manualState;
 
-  const nowMs    = Date.now();
-  const deadline = parseAppDateTime(round.deadline);
-  const matchMs  = parseAppDateTime(round.matchTime);
+  // Manual override do admin continua a ter prioridade.
+  // Use "auto" para deixar o sistema abrir/fechar sozinho.
+  if (round.manualState && round.manualState !== 'auto') {
+    return round.manualState;
+  }
 
-  if (round.resultCruzeiro !== null && round.resultOpponent !== null) return 'result';
-  if (nowMs > deadline) return 'closed';
-  // Auto-upcoming: deadline is in the future but match is also far away (>48h)
-  // and no bets have been placed yet — treat as upcoming so it doesn't hijack
-  // the current active round in the dashboard.
-  const betsForRound = getBetsArray().filter(b => b.roundId === round.id).length;
-  if (matchMs - nowMs > 48 * 3600000 && betsForRound === 0) return 'upcoming';
+  const nowMs = Date.now();
+  const matchMs = parseAppDateTime(round.matchTime);
+
+  if (!matchMs || Number.isNaN(matchMs)) return 'none';
+
+  // Resultado lançado, seja por admin ou pela API.
+  if (round.resultCruzeiro !== null && round.resultCruzeiro !== undefined &&
+      round.resultOpponent !== null && round.resultOpponent !== undefined) {
+    return 'result';
+  }
+
+  // Regra automática:
+  // - abre 12h antes do jogo;
+  // - fecha 5min antes do jogo.
+  const openMs = round.autoOpenAt
+    ? parseAppDateTime(round.autoOpenAt)
+    : matchMs - (12 * 60 * 60 * 1000);
+
+  const deadlineMs = round.deadline
+    ? parseAppDateTime(round.deadline)
+    : matchMs - (5 * 60 * 1000);
+
+  if (nowMs < openMs) return 'upcoming';
+  if (nowMs >= deadlineMs) return 'closed';
+
   return 'open';
 }
 
