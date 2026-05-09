@@ -1,4 +1,4 @@
-const CACHE = 'bolao-v5';
+const CACHE = 'bolao-v6';
 
 const ASSETS = [
   './',
