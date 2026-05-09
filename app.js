@@ -414,14 +414,45 @@ function saveUsersState() {
 
 function saveAdminState() {
   applyAdminFlags();
-  persistLocalState();
-  if (firebaseDbRef) {
-    firebaseDbRef.update({
-      rounds:                 state.rounds,
-      lastRoundHighlight:     state.lastRoundHighlight,
-      initialRankingSnapshot: state.initialRankingSnapshot
-    });
+
+  if (state?.users && typeof getPublicUsers === 'function') {
+    state.users = getPublicUsers();
   }
+
+  persistLocalState();
+
+  if (!firebaseDbRef) return Promise.resolve();
+
+  return firebaseDbRef.update({
+    rounds:                 state.rounds,
+    lastRoundHighlight:     state.lastRoundHighlight,
+    initialRankingSnapshot: state.initialRankingSnapshot
+  })
+    .then(() => {
+      showToast('Alterações salvas no servidor.');
+      renderAdminRoundStatusRibbon();
+    })
+    .catch(err => {
+      console.error('Erro ao salvar estado admin no Firebase:', err);
+
+      const uid = getFirebaseUid ? getFirebaseUid() : null;
+      const msg = uid
+        ? `Sem permissão para salvar. Confirme se este UID está em private/adminUids: ${uid}`
+        : 'Sem permissão para salvar. Não foi possível obter o UID Firebase.';
+
+      showToast(msg);
+
+      const uidBox = el('adminUidDisplay');
+      if (uidBox) {
+        uidBox.innerHTML = `
+          <strong>Erro ao salvar no Firebase</strong>
+          <span>${String(err?.message || err)}</span>
+          <span>UID atual: <code style="user-select:all;">${uid || 'sem UID'}</code></span>
+          <span>Adicione este UID em <code>bolao-cruzeiro-debates/private/adminUids</code> com valor <code>true</code>.</span>
+        `;
+        uidBox.classList.remove('hidden');
+      }
+    });
 }
 
 function saveState(scope = 'all') {
@@ -3587,3 +3618,278 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.warn('SW registration failed:', err));
   });
 }
+
+
+/* === ADMIN AUTO STATUS RIBBON PATCH === */
+(function installAdminAutoStatusRibbon() {
+  function getEl(id) {
+    return document.getElementById(id);
+  }
+
+  function parseRoundMs(value) {
+    if (!value) return NaN;
+
+    try {
+      if (typeof parseAppDateTime === 'function') {
+        const parsed = parseAppDateTime(value);
+        return Number.isFinite(parsed) ? parsed : NaN;
+      }
+    } catch {}
+
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) ? ms : NaN;
+  }
+
+  function formatDuration(ms) {
+    if (!Number.isFinite(ms)) return '—';
+
+    const abs = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(abs / 86400);
+    const hours = Math.floor((abs % 86400) / 3600);
+    const minutes = Math.floor((abs % 3600) / 60);
+
+    const parts = [];
+
+    if (days) parts.push(days + 'd');
+    if (hours) parts.push(hours + 'h');
+    parts.push(minutes + 'min');
+
+    return parts.join(' ');
+  }
+
+  function formatDateForRibbon(value) {
+    if (!value) return '—';
+
+    try {
+      if (typeof formatDateTime === 'function') return formatDateTime(value);
+    } catch {}
+
+    const ms = parseRoundMs(value);
+    if (!Number.isFinite(ms)) return value;
+
+    return new Date(ms).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function getSelectedAdminRound() {
+    const select = getEl('roundSelect');
+    if (!select || !window.state?.rounds) return null;
+
+    return window.state.rounds.find(round => round.id === select.value) || null;
+  }
+
+  function manualStateLabel(value) {
+    return ({
+      auto: 'Automático',
+      upcoming: 'Em espera',
+      open: 'Apostas abertas',
+      closed: 'Apostas encerradas',
+      result: 'Resultado lançado',
+      finalized: 'Rodada finalizada'
+    })[value] || value || 'Automático';
+  }
+
+  function computeRibbon(round) {
+    if (!round) {
+      return {
+        cls: 'neutral',
+        title: 'Sem rodada selecionada',
+        desc: 'Selecione uma rodada para ver o estado automático.'
+      };
+    }
+
+    const now = Date.now();
+    const matchMs = parseRoundMs(round.matchTime);
+    const openMs = round.autoOpenAt
+      ? parseRoundMs(round.autoOpenAt)
+      : matchMs - 12 * 60 * 60 * 1000;
+    const deadlineMs = round.deadline
+      ? parseRoundMs(round.deadline)
+      : matchMs - 5 * 60 * 1000;
+
+    const manual = round.manualState && round.manualState !== 'auto';
+
+    const hasResult =
+      round.resultCruzeiro !== null &&
+      round.resultCruzeiro !== undefined &&
+      round.resultOpponent !== null &&
+      round.resultOpponent !== undefined;
+
+    if (hasResult) {
+      return {
+        cls: 'result',
+        title: 'Resultado lançado',
+        desc: `Cruzeiro ${round.resultCruzeiro} x ${round.resultOpponent} ${round.opponent || ''}. Origem: ${round.resultSource || 'manual/admin'}.`
+      };
+    }
+
+    if (manual) {
+      return {
+        cls: round.manualState === 'open' ? 'open' : round.manualState === 'closed' ? 'closed' : 'manual',
+        title: `Estado manual: ${manualStateLabel(round.manualState)}`,
+        desc: 'Esta rodada está em controlo manual. Para usar abertura e fecho automáticos, selecione “Automático” e salve.'
+      };
+    }
+
+    if (!Number.isFinite(matchMs)) {
+      return {
+        cls: 'neutral',
+        title: 'Data do jogo ausente',
+        desc: 'Sem data/hora válida, o modo automático não consegue calcular abertura e fecho.'
+      };
+    }
+
+    if (now < openMs) {
+      return {
+        cls: 'waiting',
+        title: `Apostas abrem em ${formatDuration(openMs - now)}`,
+        desc: `Abertura: ${formatDateForRibbon(round.autoOpenAt || new Date(openMs).toISOString())}. Fecho: ${formatDateForRibbon(round.deadline)}.`
+      };
+    }
+
+    if (now >= openMs && now < deadlineMs) {
+      return {
+        cls: 'open',
+        title: 'Apostas abertas',
+        desc: `Fecham em ${formatDuration(deadlineMs - now)}, às ${formatDateForRibbon(round.deadline)}.`
+      };
+    }
+
+    return {
+      cls: 'closed',
+      title: 'Apostas encerradas',
+      desc: 'Aguardando resultado oficial da API ou lançamento manual pelo admin.'
+    };
+  }
+
+  function ensureRibbon() {
+    const manualSelect = getEl('roundManualState');
+    if (!manualSelect) return null;
+
+    let ribbon = getEl('adminRoundAutoStatusRibbon');
+    if (ribbon) return ribbon;
+
+    ribbon = document.createElement('div');
+    ribbon.id = 'adminRoundAutoStatusRibbon';
+    ribbon.className = 'admin-auto-status-ribbon neutral';
+
+    manualSelect.closest('label')?.insertAdjacentElement('afterend', ribbon);
+
+    return ribbon;
+  }
+
+  window.renderAdminRoundStatusRibbon = function renderAdminRoundStatusRibbon() {
+    const ribbon = ensureRibbon();
+    if (!ribbon) return;
+
+    const round = getSelectedAdminRound();
+    const data = computeRibbon(round);
+
+    ribbon.className = `admin-auto-status-ribbon ${data.cls}`;
+    ribbon.innerHTML = `
+      <div class="admin-auto-status-title">${data.title}</div>
+      <div class="admin-auto-status-desc">${data.desc}</div>
+    `;
+  };
+
+  function installStyle() {
+    if (getEl('adminAutoStatusRibbonStyle')) return;
+
+    const style = document.createElement('style');
+    style.id = 'adminAutoStatusRibbonStyle';
+    style.textContent = `
+      .admin-auto-status-ribbon {
+        margin: 12px 0 14px;
+        padding: 13px 15px;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,.12);
+        background: rgba(255,255,255,.05);
+        color: var(--text-2);
+      }
+
+      .admin-auto-status-title {
+        font-weight: 800;
+        color: var(--text);
+        margin-bottom: 4px;
+      }
+
+      .admin-auto-status-desc {
+        font-size: .88rem;
+        line-height: 1.45;
+      }
+
+      .admin-auto-status-ribbon.open {
+        border-color: rgba(57,217,138,.42);
+        background: rgba(57,217,138,.11);
+      }
+
+      .admin-auto-status-ribbon.open .admin-auto-status-title {
+        color: var(--green);
+      }
+
+      .admin-auto-status-ribbon.closed {
+        border-color: rgba(255,215,107,.42);
+        background: rgba(255,215,107,.10);
+      }
+
+      .admin-auto-status-ribbon.closed .admin-auto-status-title {
+        color: var(--yellow);
+      }
+
+      .admin-auto-status-ribbon.waiting {
+        border-color: rgba(96,165,250,.42);
+        background: rgba(59,130,246,.10);
+      }
+
+      .admin-auto-status-ribbon.waiting .admin-auto-status-title {
+        color: var(--accent-soft);
+      }
+
+      .admin-auto-status-ribbon.result {
+        border-color: rgba(215,184,107,.45);
+        background: rgba(215,184,107,.10);
+      }
+
+      .admin-auto-status-ribbon.result .admin-auto-status-title {
+        color: var(--gold);
+      }
+
+      .admin-auto-status-ribbon.manual {
+        border-color: rgba(255,125,125,.40);
+        background: rgba(255,125,125,.10);
+      }
+
+      .admin-auto-status-ribbon.manual .admin-auto-status-title {
+        color: var(--red);
+      }
+    `;
+
+    document.head.appendChild(style);
+  }
+
+  function boot() {
+    installStyle();
+
+    ['roundSelect', 'roundManualState', 'roundMatchTime', 'roundDeadline', 'resultCruzeiro', 'resultOpponent'].forEach(id => {
+      getEl(id)?.addEventListener('change', () => setTimeout(window.renderAdminRoundStatusRibbon, 0));
+      getEl(id)?.addEventListener('input', () => setTimeout(window.renderAdminRoundStatusRibbon, 0));
+    });
+
+    setInterval(window.renderAdminRoundStatusRibbon, 30000);
+    setTimeout(window.renderAdminRoundStatusRibbon, 500);
+    setTimeout(window.renderAdminRoundStatusRibbon, 1500);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+})();
+
