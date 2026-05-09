@@ -62,6 +62,20 @@ jobs:
           const APP_TIME_ZONE = 'America/Sao_Paulo';
           const nowIso = new Date().toISOString();
 
+          const DEFAULT_AUTOMATION = {
+            enabled: true,
+            openBetsEnabled: true,
+            openBeforeValue: 12,
+            openBeforeUnit: 'hours',
+            closeBetsEnabled: true,
+            closeBeforeValue: 5,
+            closeBeforeUnit: 'minutes',
+            autoApplyResults: true,
+            autoCreateRounds: true,
+            newRoundDefaultMode: 'auto',
+            allowManualOverride: true
+          };
+
           function readJson(file, fallback) {
             try {
               const txt = fs.readFileSync(file, 'utf8');
@@ -139,6 +153,15 @@ jobs:
             return guess.getTime() - offset;
           }
 
+          function durationMs(value, unit) {
+            const n = Number(value);
+            if (!Number.isFinite(n)) return 0;
+
+            if (unit === 'days') return n * 24 * 60 * 60 * 1000;
+            if (unit === 'hours') return n * 60 * 60 * 1000;
+            return n * 60 * 1000;
+          }
+
           const last = readJson('/tmp/last.json', { events: [] });
           const next = readJson('/tmp/next.json', { events: [] });
           const state = readJson('/tmp/state.json', {}) || {};
@@ -146,6 +169,11 @@ jobs:
           if (!Array.isArray(state.rounds)) {
             state.rounds = [];
           }
+
+          const automation = {
+            ...DEFAULT_AUTOMATION,
+            ...(state.settings?.automation || state.automation || {})
+          };
 
           function adapt(e) {
             const homeId = e.homeTeam?.id != null ? String(e.homeTeam.id) : '';
@@ -256,13 +284,25 @@ jobs:
             }) || null;
           }
 
+          function calculateTimes(matchTime) {
+            const matchMs = parseMs(matchTime);
+
+            return {
+              autoOpenAt: toAppLocalInput(matchMs - durationMs(automation.openBeforeValue, automation.openBeforeUnit)),
+              deadline: toAppLocalInput(matchMs - durationMs(automation.closeBeforeValue, automation.closeBeforeUnit))
+            };
+          }
+
           function upsertUpcomingRound(match) {
+            if (!automation.enabled || !automation.autoCreateRounds) return false;
             if (!match.idEvent || !match.matchTime) return false;
 
             let round = findExistingRound(state.rounds, match);
             const matchMs = parseMs(match.matchTime);
 
             if (!Number.isFinite(matchMs)) return false;
+
+            const times = calculateTimes(match.matchTime);
 
             if (!round) {
               const number = nextRoundNumber(state.rounds);
@@ -274,11 +314,11 @@ jobs:
                 opponent: opponentName(match),
                 competition: match.strLeague || 'Jogo do Cruzeiro',
                 matchTime: match.matchTime,
-                autoOpenAt: toAppLocalInput(matchMs - 12 * 60 * 60 * 1000),
-                deadline: toAppLocalInput(matchMs - 5 * 60 * 1000),
+                autoOpenAt: times.autoOpenAt,
+                deadline: times.deadline,
                 resultCruzeiro: null,
                 resultOpponent: null,
-                manualState: 'auto',
+                manualState: automation.newRoundDefaultMode || 'auto',
                 externalId: String(match.idEvent),
                 source: 'sofascore',
                 cruzeiroIsHome: isCruzeiroHome(match),
@@ -300,8 +340,8 @@ jobs:
             round.opponent = round.opponent || opponentName(match);
             round.competition = round.competition || match.strLeague || 'Jogo do Cruzeiro';
             round.matchTime = match.matchTime;
-            round.autoOpenAt = toAppLocalInput(matchMs - 12 * 60 * 60 * 1000);
-            round.deadline = toAppLocalInput(matchMs - 5 * 60 * 1000);
+            round.autoOpenAt = times.autoOpenAt;
+            round.deadline = times.deadline;
             round.cruzeiroIsHome = isCruzeiroHome(match);
             round.homeTeam = match.strHomeTeam;
             round.awayTeam = match.strAwayTeam;
@@ -319,6 +359,7 @@ jobs:
           }
 
           function applyFinishedResult(match) {
+            if (!automation.enabled || !automation.autoApplyResults) return false;
             if (!isFinished(match)) return false;
 
             const score = scoreForCruzeiro(match);
@@ -387,9 +428,19 @@ jobs:
             updatedAt: nowIso
           };
 
+          if (!state.settings || typeof state.settings !== 'object') {
+            state.settings = {};
+          }
+
+          state.settings.automation = {
+            ...automation,
+            updatedAt: automation.updatedAt || nowIso
+          };
+
           const statePatch = {
             externalMatches,
-            rounds: state.rounds
+            rounds: state.rounds,
+            settings: state.settings
           };
 
           fs.writeFileSync('/tmp/state-patch.json', JSON.stringify(statePatch));
