@@ -117,7 +117,7 @@ const SEED_USERS = [
   isAdmin: ADMIN_NAMES.includes(name)
 }));
 
-const APP_TIMEZONE =const APP_TIMEZONE = 'America/Sao_Paulo';
+const APP_TIMEZONE = 'America/Sao_Paulo';
 const APP_TIMEZONE_LABEL = 'Horário de Brasília';
 
 function getZonedParts(date = new Date(), timeZone = APP_TIMEZONE) {
@@ -247,7 +247,7 @@ function normalizeState(raw) {
   };
 }
 
-function applyAdminFlags()function applyAdminFlags() {
+function applyAdminFlags() {
   if (!state?.users) return;
   state.users.forEach(u => {
     u.isAdmin = ADMIN_NAMES.includes(u.name);
@@ -272,7 +272,7 @@ function persistLocalState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function saveSession(user)function saveSession(user) {
+function saveSession(user) {
   if (!user) return;
   localStorage.setItem(SESSION_KEY, JSON.stringify({
     userId: user.id,
@@ -412,7 +412,7 @@ function saveUsersState() {
   }
 }
 
-function saveAdminState()function saveAdminState() {
+function saveAdminState() {
   applyAdminFlags();
   persistLocalState();
   if (firebaseDbRef) {
@@ -461,7 +461,7 @@ function saveState(scope = 'all') {
   });
 }
 
-function currentUser()function currentUser() {
+function currentUser() {
   return session.user;
 }
 
@@ -669,7 +669,7 @@ function renderMissingBetsPanel() {
   el('missingGroupBtn')?.addEventListener('click', () => sendGroupReminder(missing, defaultGroupMsg));
 }
 
-function getSelectedMissing(missing)function getSelectedMissing(missing) {
+function getSelectedMissing(missing) {
   const checked = Array.from(document.querySelectorAll('input[name="missingUser"]:checked:not(:disabled)'));
   const selectedNames = new Set(checked.map(c => c.value));
   return missing.filter(u => selectedNames.has(u.name));
@@ -702,7 +702,7 @@ function startOneByOneReminders(missing, round) {
   renderQueueStep(round);
 }
 
-function renderQueueStep(round)function renderQueueStep(round) {
+function renderQueueStep(round) {
   const wrap = el('missingQueueWrap');
   if (!wrap) return;
 
@@ -783,7 +783,7 @@ function renderQueueStep(round)function renderQueueStep(round) {
   });
 }
 
-function sendGroupReminder(missing, defaultMsg)function sendGroupReminder(missing, defaultMsg) {
+function sendGroupReminder(missing, defaultMsg) {
   // Usa a mensagem do template se disponível
   const msg = el('missingMsgTemplate')?.value
     ? `⚽ Apostadores em falta para o próximo jogo:\n\n${missing.map(u => `• ${u.name}`).join('\n')}\n\nPor favor apostem a tempo! 🙏\n\nhttps://bolaodocruzeiro.online/`
