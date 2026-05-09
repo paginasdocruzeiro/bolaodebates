@@ -24,7 +24,7 @@
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = src + '?v=automation-settings-v1-20260509';
+      script.src = src + '?v=automation-settings-v2-20260509';
       script.async = false;
       script.onload = resolve;
       script.onerror = () => reject(new Error('Não foi possível carregar a base estável do app.js.'));
@@ -223,13 +223,8 @@
 
       const nowMs = Date.now();
 
-      const openMs = round.autoOpenAt
-        ? parseMs(round.autoOpenAt)
-        : matchMs - unitMs(automation.openBeforeValue, automation.openBeforeUnit);
-
-      const deadlineMs = round.deadline
-        ? parseMs(round.deadline)
-        : matchMs - unitMs(automation.closeBeforeValue, automation.closeBeforeUnit);
+      const openMs = matchMs - unitMs(automation.openBeforeValue, automation.openBeforeUnit);
+      const deadlineMs = matchMs - unitMs(automation.closeBeforeValue, automation.closeBeforeUnit);
 
       if (automation.closeBetsEnabled && nowMs >= deadlineMs) return 'closed';
 
@@ -267,12 +262,10 @@
     const automation = automationSettings();
     const now = Date.now();
     const matchMs = parseMs(draft.matchTime);
-    const deadlineMs = draft.deadline
-      ? parseMs(draft.deadline)
-      : matchMs - unitMs(automation.closeBeforeValue, automation.closeBeforeUnit);
-    const openMs = draft.autoOpenAt
-      ? parseMs(draft.autoOpenAt)
-      : matchMs - unitMs(automation.openBeforeValue, automation.openBeforeUnit);
+    const openMs = matchMs - unitMs(automation.openBeforeValue, automation.openBeforeUnit);
+    const deadlineMs = matchMs - unitMs(automation.closeBeforeValue, automation.closeBeforeUnit);
+    const computedOpenInput = Number.isFinite(openMs) ? toAppInput(new Date(openMs)) : '';
+    const computedDeadlineInput = Number.isFinite(deadlineMs) ? toAppInput(new Date(deadlineMs)) : '';
 
     const hasResult =
       draft.resultCruzeiro !== null &&
@@ -340,7 +333,7 @@
       return {
         cls: 'waiting',
         title: 'Apostas abrem em ' + formatDuration(openMs - now),
-        desc: `Abertura: ${formatDate(toAppInput(new Date(openMs)))}. Fecho: ${formatDate(draft.deadline)}.`
+        desc: `Abertura: ${formatDate(computedOpenInput)}. Fecho: ${formatDate(computedDeadlineInput)}.`
       };
     }
 
@@ -348,7 +341,7 @@
       cls: 'open',
       title: 'Apostas abertas',
       desc: automation.closeBetsEnabled
-        ? 'Fecham em ' + formatDuration(deadlineMs - now) + ', às ' + formatDate(draft.deadline) + '.'
+        ? 'Fecham em ' + formatDuration(deadlineMs - now) + ', às ' + formatDate(computedDeadlineInput) + '.'
         : 'Fecho automático desligado.'
     };
   }
@@ -413,45 +406,99 @@
       }
       .automation-settings-grid {
         display:grid;
-        gap:14px;
+        gap:16px;
+        max-width:980px;
       }
       .automation-settings-card {
-        padding:16px;
+        padding:18px;
         border:1px solid var(--line);
         border-radius:18px;
-        background:rgba(255,255,255,.035);
+        background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+      }
+      .automation-card-title {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        margin-bottom:12px;
+      }
+      .automation-card-title strong {
+        font-size:1rem;
+      }
+      .automation-card-title span {
+        color:var(--text-2);
+        font-size:.84rem;
+      }
+      .automation-toggle-row {
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:18px;
+        padding:12px 0;
+        border-top:1px solid rgba(255,255,255,.06);
+      }
+      .automation-toggle-text {
+        display:grid;
+        gap:3px;
+      }
+      .automation-toggle-text strong {
+        font-size:.94rem;
+        color:var(--text);
+      }
+      .automation-toggle-text span {
+        font-size:.82rem;
+        color:var(--text-2);
+      }
+      .automation-toggle-row input[type="checkbox"] {
+        width:18px;
+        height:18px;
+        flex:0 0 auto;
       }
       .automation-row {
         display:grid;
-        grid-template-columns: 1fr 120px 130px;
-        gap:10px;
+        grid-template-columns: minmax(180px, 1fr) 160px auto;
+        gap:12px;
         align-items:end;
-        margin-top:10px;
+        margin-top:12px;
       }
-      .automation-row label {
+      .automation-field {
         display:grid;
-        gap:6px;
+        gap:7px;
         color:var(--text-2);
-        font-size:.86rem;
+        font-size:.84rem;
       }
-      .automation-check {
-        display:flex;
-        align-items:center;
-        gap:8px;
-        margin:8px 0;
-        color:var(--text);
+      .automation-field input,
+      .automation-field select {
+        width:100%;
+      }
+      .automation-hint {
+        color:var(--text-2);
+        font-size:.84rem;
+        padding-bottom:13px;
       }
       .automation-summary {
-        padding:14px 16px;
+        padding:15px 17px;
         border-radius:16px;
         border:1px solid rgba(96,165,250,.35);
         background:rgba(59,130,246,.09);
         color:var(--text-2);
-        line-height:1.5;
+        line-height:1.55;
+        max-width:980px;
+      }
+      .automation-actions {
+        display:flex;
+        gap:10px;
+        flex-wrap:wrap;
       }
       @media (max-width:720px) {
         .automation-row {
           grid-template-columns: 1fr;
+        }
+        .automation-hint {
+          padding-bottom:0;
+        }
+        .automation-toggle-row {
+          align-items:flex-start;
         }
       }
     `;
@@ -524,21 +571,22 @@
 
       const existing = rounds[index] || {};
       const automation = automationSettings();
+      const formManualState = q('roundManualState')?.value || automation.newRoundDefaultMode || 'auto';
+      const times = computeTimes(matchTimeVal, automation);
+
       const updatedRound = {
         ...existing,
         title: q('roundTitle')?.value?.trim() || existing.title || 'Rodada',
         opponent: q('roundOpponentName')?.value?.trim() || existing.opponent || '',
         competition: q('roundCompetition')?.value?.trim() || existing.competition || '',
         matchTime: matchTimeVal,
-        deadline: deadlineVal,
-        manualState: q('roundManualState')?.value || automation.newRoundDefaultMode || 'auto',
+        autoOpenAt: times.autoOpenAt || existing.autoOpenAt || '',
+        deadline: formManualState === 'auto' ? (times.deadline || deadlineVal) : deadlineVal,
+        manualState: formManualState,
         resultCruzeiro: numberOrNull(q('resultCruzeiro')?.value),
         resultOpponent: numberOrNull(q('resultOpponent')?.value),
         updatedAt: new Date().toISOString()
       };
-
-      const times = computeTimes(updatedRound.matchTime, automation);
-      updatedRound.autoOpenAt = times.autoOpenAt || updatedRound.autoOpenAt || '';
 
       const titleRoundNumber = String(updatedRound.title || '').match(/rodada\s*(\d+)/i);
 
@@ -682,70 +730,94 @@
     return `
       <section class="panel">
         <span class="mini-label">Configurações</span>
-        <h3 style="margin:4px 0 12px;">Configurações das Rodadas Automáticas</h3>
-        <p class="muted" style="margin-top:0;">Defina como as rodadas devem abrir, fechar e receber resultados automaticamente.</p>
+        <h3 style="margin:4px 0 8px;">Configurações das Rodadas Automáticas</h3>
+        <p class="muted" style="margin-top:0;margin-bottom:18px;">Defina quando as apostas abrem, quando fecham e como a API deve criar rodadas e aplicar resultados.</p>
 
         <form id="automationSettingsForm" class="automation-settings-grid">
           <div class="automation-settings-card">
-            <strong>Automação geral</strong>
-            <label class="automation-check">
+            <div class="automation-card-title">
+              <strong>Automação geral</strong>
+              <span>Controla todo o comportamento automático</span>
+            </div>
+            <div class="automation-toggle-row">
+              <div class="automation-toggle-text">
+                <strong>Ativar automação das rodadas</strong>
+                <span>Quando desligado, as rodadas dependem do controlo manual.</span>
+              </div>
               <input type="checkbox" id="autoEnabled" ${settings.enabled ? 'checked' : ''}>
-              Ativar automação das rodadas
-            </label>
+            </div>
           </div>
 
           <div class="automation-settings-card">
-            <strong>Janela de apostas</strong>
+            <div class="automation-card-title">
+              <strong>Janela de apostas</strong>
+              <span>Abertura e fecho calculados a partir do horário do jogo</span>
+            </div>
 
-            <label class="automation-check">
+            <div class="automation-toggle-row">
+              <div class="automation-toggle-text">
+                <strong>Abrir apostas automaticamente</strong>
+                <span>Exemplo: 24 horas antes do jogo.</span>
+              </div>
               <input type="checkbox" id="openBetsEnabled" ${settings.openBetsEnabled ? 'checked' : ''}>
-              Abrir apostas automaticamente
-            </label>
+            </div>
 
             <div class="automation-row">
-              <label>
+              <label class="automation-field">
                 Abrir apostas
                 <input type="number" id="openBeforeValue" min="0" step="1" value="${settings.openBeforeValue}">
               </label>
-              <label>
+              <label class="automation-field">
                 Unidade
                 <select id="openBeforeUnit">${unitOptions(settings.openBeforeUnit)}</select>
               </label>
-              <span class="muted">antes do jogo</span>
+              <span class="automation-hint">antes do jogo</span>
             </div>
 
-            <label class="automation-check" style="margin-top:18px;">
+            <div class="automation-toggle-row" style="margin-top:12px;">
+              <div class="automation-toggle-text">
+                <strong>Fechar apostas automaticamente</strong>
+                <span>Exemplo: 5 minutos antes do jogo.</span>
+              </div>
               <input type="checkbox" id="closeBetsEnabled" ${settings.closeBetsEnabled ? 'checked' : ''}>
-              Fechar apostas automaticamente
-            </label>
+            </div>
 
             <div class="automation-row">
-              <label>
+              <label class="automation-field">
                 Fechar apostas
                 <input type="number" id="closeBeforeValue" min="0" step="1" value="${settings.closeBeforeValue}">
               </label>
-              <label>
+              <label class="automation-field">
                 Unidade
                 <select id="closeBeforeUnit">${unitOptions(settings.closeBeforeUnit)}</select>
               </label>
-              <span class="muted">antes do jogo</span>
+              <span class="automation-hint">antes do jogo</span>
             </div>
           </div>
 
           <div class="automation-settings-card">
-            <strong>Resultados e importação</strong>
+            <div class="automation-card-title">
+              <strong>Resultados e importação</strong>
+              <span>Como a API alimenta o bolão</span>
+            </div>
 
-            <label class="automation-check">
+            <div class="automation-toggle-row">
+              <div class="automation-toggle-text">
+                <strong>Aplicar resultado automaticamente</strong>
+                <span>Usa o placar final quando a API indicar jogo finalizado.</span>
+              </div>
               <input type="checkbox" id="autoApplyResults" ${settings.autoApplyResults ? 'checked' : ''}>
-              Aplicar resultado automaticamente quando a API confirmar jogo finalizado
-            </label>
+            </div>
 
-            <label class="automation-check">
+            <div class="automation-toggle-row">
+              <div class="automation-toggle-text">
+                <strong>Criar rodadas automaticamente</strong>
+                <span>Próximos jogos da API viram novas rodadas.</span>
+              </div>
               <input type="checkbox" id="autoCreateRounds" ${settings.autoCreateRounds ? 'checked' : ''}>
-              Criar rodadas automaticamente a partir dos próximos jogos da API
-            </label>
+            </div>
 
-            <label style="display:grid;gap:6px;color:var(--text-2);font-size:.86rem;margin-top:10px;">
+            <label class="automation-field" style="margin-top:14px;">
               Estado padrão das novas rodadas
               <select id="newRoundDefaultMode">
                 <option value="auto" ${settings.newRoundDefaultMode === 'auto' ? 'selected' : ''}>Automático</option>
@@ -757,18 +829,24 @@
           </div>
 
           <div class="automation-settings-card">
-            <strong>Controlo manual</strong>
-            <label class="automation-check">
+            <div class="automation-card-title">
+              <strong>Controlo manual</strong>
+              <span>Permite exceções rodada a rodada</span>
+            </div>
+            <div class="automation-toggle-row">
+              <div class="automation-toggle-text">
+                <strong>Permitir override manual</strong>
+                <span>Admins podem forçar “Apostas abertas”, “Encerradas” ou “Finalizada”.</span>
+              </div>
               <input type="checkbox" id="allowManualOverride" ${settings.allowManualOverride !== false ? 'checked' : ''}>
-              Permitir que admins sobrescrevam manualmente uma rodada
-            </label>
+            </div>
           </div>
 
           <div class="automation-summary" id="automationSettingsSummary">
             ${automationSummaryHTML(settings)}
           </div>
 
-          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <div class="automation-actions">
             <button type="submit" class="ios-btn ios-btn-blue">Salvar configurações</button>
             <button type="button" id="automationResetBtn" class="ios-btn ios-btn-gray">Restaurar padrão</button>
             <button type="button" id="automationApplyRoundsBtn" class="ios-btn ios-btn-green">Aplicar nas rodadas automáticas</button>
@@ -810,10 +888,10 @@
     return payload;
   }
 
-  async function applyAutomationToRounds() {
+  async function applyAutomationToRounds(showFinalToast = true) {
     const s = appState();
     if (!s || !Array.isArray(s.rounds)) {
-      toast('Estado local ainda não está carregado.');
+      if (showFinalToast) toast('Estado local ainda não está carregado.');
       return;
     }
 
@@ -841,7 +919,7 @@
       if (typeof renderAll === 'function') renderAll('admin');
     } catch {}
 
-    toast(`${changed} rodada(s) automática(s) atualizada(s).`);
+    if (showFinalToast) toast(`${changed} rodada(s) automática(s) atualizada(s).`);
   }
 
   function refreshAutomationSummary() {
@@ -889,10 +967,14 @@
 
         try {
           const saved = await saveAutomationSettings(readAutomationForm());
-          toast('Configurações de automação salvas.');
+          await applyAutomationToRounds(false);
+          toast('Configurações salvas e aplicadas às rodadas automáticas.');
           q('automationSettingsSummary').innerHTML = automationSummaryHTML(saved);
           overrideEffectiveRoundState();
           renderRibbon();
+          try {
+            if (typeof renderAll === 'function') renderAll('admin');
+          } catch {}
         } catch (err) {
           console.error('[Bolão] Erro ao salvar configurações:', err);
           ensureAdminErrorBox('O Firebase bloqueou ou falhou ao salvar as configurações.', err);
