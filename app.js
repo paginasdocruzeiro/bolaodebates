@@ -3620,190 +3620,10 @@ if ('serviceWorker' in navigator) {
 }
 
 
-/* === ADMIN SAVE + RIBBON V2 PATCH === */
-(function installAdminSaveAndRibbonV2() {
-  const PATCH_NAME = 'admin-save-ribbon-v2';
-
-  function q(id) {
+/* === ADMIN AUTO STATUS RIBBON PATCH === */
+(function installAdminAutoStatusRibbon() {
+  function getEl(id) {
     return document.getElementById(id);
-  }
-
-  function toast(message) {
-    try {
-      if (typeof showToast === 'function') {
-        showToast(message);
-        return;
-      }
-    } catch {}
-
-    console.log(message);
-  }
-
-  function getState() {
-    try {
-      return state;
-    } catch {
-      return null;
-    }
-  }
-
-  function getRounds() {
-    const s = getState();
-    return Array.isArray(s?.rounds) ? s.rounds : [];
-  }
-
-  function selectedRoundId() {
-    return q('roundSelect')?.value || '';
-  }
-
-  function selectedRound() {
-    const id = selectedRoundId();
-    return getRounds().find(round => round.id === id) || null;
-  }
-
-  function currentUid() {
-    try {
-      if (typeof getFirebaseUid === 'function') return getFirebaseUid();
-    } catch {}
-
-    try {
-      return firebase.auth().currentUser?.uid || null;
-    } catch {}
-
-    return null;
-  }
-
-  function roundNumberFromTitle(title) {
-    const m = String(title || '').match(/rodada\s*(\d+)/i);
-    return m ? Number(m[1]) : null;
-  }
-
-  function nextRoundNumber() {
-    const max = getRounds().reduce((acc, round) => {
-      const n = Number(round.roundNumber) || roundNumberFromTitle(round.title) || 0;
-      return Math.max(acc, n);
-    }, 0);
-
-    return max + 1;
-  }
-
-  function numberOrNull(value) {
-    if (value === '' || value === null || value === undefined) return null;
-    const n = Number(value);
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function ensureAdminErrorBox(message, err) {
-    const uid = currentUid();
-    const box = q('adminUidDisplay');
-
-    if (!box) return;
-
-    box.innerHTML = `
-      <strong>Erro ao salvar no Firebase</strong>
-      <span>${message}</span>
-      ${err ? `<span>Erro: ${String(err?.message || err)}</span>` : ''}
-      <span>UID atual: <code style="user-select:all;">${uid || 'sem UID'}</code></span>
-      <span>Confirme se este UID existe em <code>bolao-cruzeiro-debates/private/adminUids</code> com valor <code>true</code>.</span>
-    `;
-
-    box.classList.remove('hidden');
-  }
-
-  async function saveRoundFromAdminForm(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-
-    const s = getState();
-
-    if (!s) {
-      toast('Estado do app ainda não carregado.');
-      return false;
-    }
-
-    if (!Array.isArray(s.rounds)) s.rounds = [];
-
-    let round = selectedRound();
-
-    if (!round) {
-      const n = nextRoundNumber();
-
-      round = {
-        id: crypto.randomUUID ? crypto.randomUUID() : 'round-' + Date.now(),
-        roundNumber: n,
-        title: 'Rodada ' + n,
-        opponent: '',
-        competition: '',
-        matchTime: '',
-        deadline: '',
-        resultCruzeiro: null,
-        resultOpponent: null,
-        manualState: 'auto',
-        createdAt: new Date().toISOString()
-      };
-
-      s.rounds.push(round);
-    }
-
-    const title = q('roundTitle')?.value?.trim() || round.title || ('Rodada ' + (round.roundNumber || nextRoundNumber()));
-    const opponent = q('roundOpponentName')?.value?.trim() || '';
-    const competition = q('roundCompetition')?.value?.trim() || '';
-    const matchTime = q('roundMatchTime')?.value || '';
-    const deadline = q('roundDeadline')?.value || '';
-    const manualState = q('roundManualState')?.value || 'auto';
-    const resultCruzeiro = numberOrNull(q('resultCruzeiro')?.value);
-    const resultOpponent = numberOrNull(q('resultOpponent')?.value);
-
-    round.title = title;
-    round.opponent = opponent;
-    round.competition = competition;
-    round.matchTime = matchTime;
-    round.deadline = deadline;
-    round.manualState = manualState;
-    round.resultCruzeiro = resultCruzeiro;
-    round.resultOpponent = resultOpponent;
-    round.updatedAt = new Date().toISOString();
-
-    if (!Number.isFinite(Number(round.roundNumber))) {
-      round.roundNumber = roundNumberFromTitle(title) || nextRoundNumber();
-    }
-
-    try {
-      if (typeof applyAdminFlags === 'function') applyAdminFlags();
-      if (s.users && typeof getPublicUsers === 'function') s.users = getPublicUsers();
-      if (typeof persistLocalState === 'function') persistLocalState();
-    } catch (err) {
-      console.warn('Local persist warning:', err);
-    }
-
-    try {
-      if (!firebaseDbRef) {
-        toast('Salvo localmente. Firebase ainda não está ligado.');
-        renderRibbon();
-        return false;
-      }
-
-      await firebaseDbRef.update({
-        rounds: s.rounds,
-        lastRoundHighlight: s.lastRoundHighlight || null,
-        initialRankingSnapshot: Array.isArray(s.initialRankingSnapshot) ? s.initialRankingSnapshot : []
-      });
-
-      toast('Rodada salva com sucesso.');
-      renderRibbon();
-
-      try {
-        if (typeof renderAll === 'function') renderAll(currentRoute || 'admin');
-      } catch {}
-
-      return true;
-    } catch (err) {
-      console.error('Erro ao salvar rodada:', err);
-      ensureAdminErrorBox('O Firebase bloqueou o salvamento da rodada.', err);
-      toast('Erro ao salvar no Firebase. Veja o UID no painel.');
-      return false;
-    }
   }
 
   function parseRoundMs(value) {
@@ -3823,12 +3643,13 @@ if ('serviceWorker' in navigator) {
   function formatDuration(ms) {
     if (!Number.isFinite(ms)) return '—';
 
-    const seconds = Math.max(0, Math.floor(ms / 1000));
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const abs = Math.max(0, Math.floor(ms / 1000));
+    const days = Math.floor(abs / 86400);
+    const hours = Math.floor((abs % 86400) / 3600);
+    const minutes = Math.floor((abs % 3600) / 60);
 
     const parts = [];
+
     if (days) parts.push(days + 'd');
     if (hours) parts.push(hours + 'h');
     parts.push(minutes + 'min');
@@ -3836,14 +3657,42 @@ if ('serviceWorker' in navigator) {
     return parts.join(' ');
   }
 
-  function formatRoundDate(value) {
+  function formatDateForRibbon(value) {
     if (!value) return '—';
 
     try {
       if (typeof formatDateTime === 'function') return formatDateTime(value);
     } catch {}
 
-    return value;
+    const ms = parseRoundMs(value);
+    if (!Number.isFinite(ms)) return value;
+
+    return new Date(ms).toLocaleString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function getSelectedAdminRound() {
+    const select = getEl('roundSelect');
+    if (!select || !window.state?.rounds) return null;
+
+    return window.state.rounds.find(round => round.id === select.value) || null;
+  }
+
+  function manualStateLabel(value) {
+    return ({
+      auto: 'Automático',
+      upcoming: 'Em espera',
+      open: 'Apostas abertas',
+      closed: 'Apostas encerradas',
+      result: 'Resultado lançado',
+      finalized: 'Rodada finalizada'
+    })[value] || value || 'Automático';
   }
 
   function computeRibbon(round) {
@@ -3857,13 +3706,12 @@ if ('serviceWorker' in navigator) {
 
     const now = Date.now();
     const matchMs = parseRoundMs(round.matchTime);
-    const deadlineMs = round.deadline
-      ? parseRoundMs(round.deadline)
-      : matchMs - 5 * 60 * 1000;
-
     const openMs = round.autoOpenAt
       ? parseRoundMs(round.autoOpenAt)
       : matchMs - 12 * 60 * 60 * 1000;
+    const deadlineMs = round.deadline
+      ? parseRoundMs(round.deadline)
+      : matchMs - 5 * 60 * 1000;
 
     const manual = round.manualState && round.manualState !== 'auto';
 
@@ -3882,18 +3730,10 @@ if ('serviceWorker' in navigator) {
     }
 
     if (manual) {
-      const labels = {
-        upcoming: 'Em espera',
-        open: 'Apostas abertas',
-        closed: 'Apostas encerradas',
-        finalized: 'Rodada finalizada',
-        result: 'Resultado lançado'
-      };
-
       return {
         cls: round.manualState === 'open' ? 'open' : round.manualState === 'closed' ? 'closed' : 'manual',
-        title: 'Estado manual: ' + (labels[round.manualState] || round.manualState),
-        desc: 'Esta rodada está em controlo manual. Para usar a automação, escolha “Automático” e salve.'
+        title: `Estado manual: ${manualStateLabel(round.manualState)}`,
+        desc: 'Esta rodada está em controlo manual. Para usar abertura e fecho automáticos, selecione “Automático” e salve.'
       };
     }
 
@@ -3901,15 +3741,15 @@ if ('serviceWorker' in navigator) {
       return {
         cls: 'neutral',
         title: 'Data do jogo ausente',
-        desc: 'Sem data/hora válida, a automação não consegue calcular abertura e fecho.'
+        desc: 'Sem data/hora válida, o modo automático não consegue calcular abertura e fecho.'
       };
     }
 
     if (now < openMs) {
       return {
         cls: 'waiting',
-        title: 'Apostas abrem em ' + formatDuration(openMs - now),
-        desc: `Abertura automática: ${formatRoundDate(round.autoOpenAt || round.matchTime)}. Fecho: ${formatRoundDate(round.deadline)}.`
+        title: `Apostas abrem em ${formatDuration(openMs - now)}`,
+        desc: `Abertura: ${formatDateForRibbon(round.autoOpenAt || new Date(openMs).toISOString())}. Fecho: ${formatDateForRibbon(round.deadline)}.`
       };
     }
 
@@ -3917,7 +3757,7 @@ if ('serviceWorker' in navigator) {
       return {
         cls: 'open',
         title: 'Apostas abertas',
-        desc: 'Fecham em ' + formatDuration(deadlineMs - now) + ', às ' + formatRoundDate(round.deadline) + '.'
+        desc: `Fecham em ${formatDuration(deadlineMs - now)}, às ${formatDateForRibbon(round.deadline)}.`
       };
     }
 
@@ -3928,11 +3768,41 @@ if ('serviceWorker' in navigator) {
     };
   }
 
-  function ensureStyle() {
-    if (q('adminSaveRibbonV2Style')) return;
+  function ensureRibbon() {
+    const manualSelect = getEl('roundManualState');
+    if (!manualSelect) return null;
+
+    let ribbon = getEl('adminRoundAutoStatusRibbon');
+    if (ribbon) return ribbon;
+
+    ribbon = document.createElement('div');
+    ribbon.id = 'adminRoundAutoStatusRibbon';
+    ribbon.className = 'admin-auto-status-ribbon neutral';
+
+    manualSelect.closest('label')?.insertAdjacentElement('afterend', ribbon);
+
+    return ribbon;
+  }
+
+  window.renderAdminRoundStatusRibbon = function renderAdminRoundStatusRibbon() {
+    const ribbon = ensureRibbon();
+    if (!ribbon) return;
+
+    const round = getSelectedAdminRound();
+    const data = computeRibbon(round);
+
+    ribbon.className = `admin-auto-status-ribbon ${data.cls}`;
+    ribbon.innerHTML = `
+      <div class="admin-auto-status-title">${data.title}</div>
+      <div class="admin-auto-status-desc">${data.desc}</div>
+    `;
+  };
+
+  function installStyle() {
+    if (getEl('adminAutoStatusRibbonStyle')) return;
 
     const style = document.createElement('style');
-    style.id = 'adminSaveRibbonV2Style';
+    style.id = 'adminAutoStatusRibbonStyle';
     style.textContent = `
       .admin-auto-status-ribbon {
         margin: 12px 0 14px;
@@ -4003,306 +3873,22 @@ if ('serviceWorker' in navigator) {
     document.head.appendChild(style);
   }
 
-  function ensureRibbon() {
-    const manualSelect = q('roundManualState');
-    if (!manualSelect) return null;
+  function boot() {
+    installStyle();
 
-    let ribbon = q('adminRoundAutoStatusRibbon');
-    if (ribbon) return ribbon;
-
-    ribbon = document.createElement('div');
-    ribbon.id = 'adminRoundAutoStatusRibbon';
-    ribbon.className = 'admin-auto-status-ribbon neutral';
-
-    manualSelect.closest('label')?.insertAdjacentElement('afterend', ribbon);
-
-    return ribbon;
-  }
-
-  function renderRibbon() {
-    const ribbon = ensureRibbon();
-    if (!ribbon) return;
-
-    const data = computeRibbon(selectedRound());
-
-    ribbon.className = 'admin-auto-status-ribbon ' + data.cls;
-    ribbon.innerHTML = `
-      <div class="admin-auto-status-title">${data.title}</div>
-      <div class="admin-auto-status-desc">${data.desc}</div>
-    `;
-  }
-
-  function updateRibbonRoundPreviewFromForm() {
-    const round = selectedRound();
-    if (!round) {
-      renderRibbon();
-      return;
-    }
-
-    const draft = {
-      ...round,
-      matchTime: q('roundMatchTime')?.value || round.matchTime,
-      deadline: q('roundDeadline')?.value || round.deadline,
-      manualState: q('roundManualState')?.value || round.manualState,
-      resultCruzeiro: numberOrNull(q('resultCruzeiro')?.value),
-      resultOpponent: numberOrNull(q('resultOpponent')?.value),
-      opponent: q('roundOpponentName')?.value || round.opponent
-    };
-
-    const ribbon = ensureRibbon();
-    if (!ribbon) return;
-
-    const data = computeRibbon(draft);
-
-    ribbon.className = 'admin-auto-status-ribbon ' + data.cls;
-    ribbon.innerHTML = `
-      <div class="admin-auto-status-title">${data.title}</div>
-      <div class="admin-auto-status-desc">${data.desc}</div>
-    `;
-  }
-
-  function install() {
-    ensureStyle();
-
-    const form = q('roundForm');
-
-    if (form && !form.dataset[PATCH_NAME]) {
-      form.dataset[PATCH_NAME] = '1';
-      form.addEventListener('submit', saveRoundFromAdminForm, true);
-    }
-
-    ['roundSelect', 'roundManualState', 'roundMatchTime', 'roundDeadline', 'resultCruzeiro', 'resultOpponent', 'roundOpponentName'].forEach(id => {
-      const node = q(id);
-      if (!node || node.dataset[PATCH_NAME]) return;
-
-      node.dataset[PATCH_NAME] = '1';
-      node.addEventListener('change', () => setTimeout(updateRibbonRoundPreviewFromForm, 0));
-      node.addEventListener('input', () => setTimeout(updateRibbonRoundPreviewFromForm, 0));
+    ['roundSelect', 'roundManualState', 'roundMatchTime', 'roundDeadline', 'resultCruzeiro', 'resultOpponent'].forEach(id => {
+      getEl(id)?.addEventListener('change', () => setTimeout(window.renderAdminRoundStatusRibbon, 0));
+      getEl(id)?.addEventListener('input', () => setTimeout(window.renderAdminRoundStatusRibbon, 0));
     });
 
-    setTimeout(renderRibbon, 250);
-    setTimeout(renderRibbon, 1000);
-    setTimeout(renderRibbon, 2000);
-    setInterval(renderRibbon, 30000);
-  }
-
-  window.renderAdminRoundStatusRibbon = renderRibbon;
-  window.saveRoundFromAdminFormV2 = saveRoundFromAdminForm;
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', install);
-  } else {
-    install();
-  }
-
-  // Reinstala quando o app renderizar de novo a view admin.
-  setInterval(install, 1500);
-})();
-
-
-/* === PRIVATE PHONES LOAD FIX V2 === */
-(function installPrivatePhonesLoadFixV2() {
-  let privatePhonesLoadedForUid = null;
-  let privatePhonesLoading = false;
-  let privatePhonesLastError = null;
-
-  function q(id) {
-    return document.getElementById(id);
-  }
-
-  function getUid() {
-    try {
-      if (typeof getFirebaseUid === 'function') return getFirebaseUid();
-    } catch {}
-
-    try {
-      return firebase.auth().currentUser?.uid || null;
-    } catch {}
-
-    return null;
-  }
-
-  function phoneCount() {
-    try {
-      return Object.keys(privatePhones || {}).length;
-    } catch {
-      return 0;
-    }
-  }
-
-  function showPhoneLoadWarning(message) {
-    const wrap = q('missingBetsAdminWrap');
-    if (!wrap) return;
-
-    const uid = getUid() || 'sem UID';
-
-    const existing = q('privatePhonesLoadWarning');
-    if (existing) existing.remove();
-
-    const box = document.createElement('div');
-    box.id = 'privatePhonesLoadWarning';
-    box.className = 'notice';
-    box.style.cssText = 'margin-bottom:12px;border-color:rgba(255,125,125,.35);color:var(--red);display:grid;gap:8px;';
-    box.innerHTML = `
-      <strong>Telefones privados não carregados</strong>
-      <span>${message}</span>
-      <span>UID atual: <code style="user-select:all;">${uid}</code></span>
-      <span>Confirme se este UID existe em <code>bolao-cruzeiro-debates/private/adminUids</code> com valor <code>true</code>.</span>
-      <button type="button" class="ios-btn ios-btn-gray" id="reloadPrivatePhonesBtn">Recarregar telefones</button>
-    `;
-
-    wrap.prepend(box);
-
-    q('reloadPrivatePhonesBtn')?.addEventListener('click', async () => {
-      privatePhonesLoadedForUid = null;
-      privatePhonesLoaded = false;
-      await window.reloadPrivatePhonesNow?.();
-      renderMissingBetsPanel();
-    });
-  }
-
-  async function loadPhones(force = false) {
-    const uid = getUid();
-
-    if (!firebaseDbRef) {
-      privatePhones = {};
-      privatePhonesLoaded = false;
-      privatePhonesLoadedForUid = null;
-      privatePhonesLastError = 'Firebase ainda não está inicializado.';
-      return {};
-    }
-
-    if (!isAdmin || !isAdmin()) {
-      privatePhones = {};
-      privatePhonesLoaded = false;
-      privatePhonesLoadedForUid = null;
-      privatePhonesLastError = 'Utilizador atual não está marcado como admin no app.';
-      return {};
-    }
-
-    if (!uid) {
-      privatePhones = {};
-      privatePhonesLoaded = false;
-      privatePhonesLoadedForUid = null;
-      privatePhonesLastError = 'UID Firebase ainda não disponível.';
-      return {};
-    }
-
-    if (!force && privatePhonesLoaded && privatePhonesLoadedForUid === uid) {
-      return privatePhones || {};
-    }
-
-    if (privatePhonesLoading) {
-      return privatePhones || {};
-    }
-
-    privatePhonesLoading = true;
-    privatePhonesLastError = null;
-
-    try {
-      const snapshot = await firebase
-        .database()
-        .ref(PRIVATE_PHONES_PATH || 'bolao-cruzeiro-debates/private/phones')
-        .once('value');
-
-      privatePhones = snapshot.val() || {};
-      privatePhonesLoaded = true;
-      privatePhonesLoadedForUid = uid;
-      privatePhonesLastError = null;
-
-      console.log('[Bolao] Telefones privados carregados:', phoneCount());
-
-      return privatePhones;
-    } catch (err) {
-      console.error('[Bolao] Erro ao carregar telefones privados:', err);
-
-      privatePhones = {};
-      privatePhonesLoaded = false;
-      privatePhonesLoadedForUid = null;
-      privatePhonesLastError = String(err?.message || err);
-
-      return {};
-    } finally {
-      privatePhonesLoading = false;
-    }
-  }
-
-  // Substitui a função original.
-  loadPrivatePhonesIfAdmin = async function loadPrivatePhonesIfAdminPatched(force = false) {
-    return loadPhones(force);
-  };
-
-  window.reloadPrivatePhonesNow = async function reloadPrivatePhonesNow() {
-    return loadPhones(true);
-  };
-
-  const originalRenderMissingBetsPanel = renderMissingBetsPanel;
-
-  renderMissingBetsPanel = function renderMissingBetsPanelPatched() {
-    const uid = getUid();
-
-    if (
-      firebaseDbRef &&
-      isAdmin &&
-      isAdmin() &&
-      uid &&
-      privatePhonesLoadedForUid !== uid &&
-      !privatePhonesLoading
-    ) {
-      const wrap = q('missingBetsAdminWrap');
-      if (wrap) {
-        wrap.innerHTML = '<div class="notice" style="color:var(--text-2);">A carregar telefones privados...</div>';
-      }
-
-      loadPhones(true)
-        .then(() => originalRenderMissingBetsPanel())
-        .then(() => {
-          if (phoneCount() === 0) {
-            showPhoneLoadWarning('O Firebase respondeu, mas não encontrou telefones em private/phones.');
-          }
-        })
-        .catch(err => {
-          showPhoneLoadWarning(String(err?.message || err));
-        });
-
-      return;
-    }
-
-    originalRenderMissingBetsPanel();
-
-    if (isAdmin && isAdmin() && privatePhonesLastError && phoneCount() === 0) {
-      showPhoneLoadWarning(privatePhonesLastError);
-    }
-  };
-
-  // Tenta carregar assim que o app estiver pronto e depois de renderizações tardias.
-  function scheduleReloads() {
-    [300, 1000, 2500].forEach(delay => {
-      setTimeout(async () => {
-        const uid = getUid();
-
-        if (
-          firebaseDbRef &&
-          isAdmin &&
-          isAdmin() &&
-          uid &&
-          privatePhonesLoadedForUid !== uid
-        ) {
-          await loadPhones(true);
-          try {
-            renderMissingBetsPanel();
-          } catch {}
-        }
-      }, delay);
-    });
+    setInterval(window.renderAdminRoundStatusRibbon, 30000);
+    setTimeout(window.renderAdminRoundStatusRibbon, 500);
+    setTimeout(window.renderAdminRoundStatusRibbon, 1500);
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', scheduleReloads);
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    scheduleReloads();
+    boot();
   }
-
-  console.log('[Bolao] Private phones load fix v2 instalado.');
 })();
-
