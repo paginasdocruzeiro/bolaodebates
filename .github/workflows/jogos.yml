@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # Roda a cada 4 horas.
-    # Como há 2 chamadas à API por execução, isso dá cerca de 360 chamadas/mês.
+    # São 2 chamadas à API por execução, cerca de 360 chamadas/mês.
     - cron: "0 */4 * * *"
 
 jobs:
@@ -59,12 +59,15 @@ jobs:
           const fs = require('fs');
 
           const TEAM_ID = '1954';
+          const APP_TIME_ZONE = 'America/Sao_Paulo';
           const nowIso = new Date().toISOString();
 
           function readJson(file, fallback) {
             try {
               const txt = fs.readFileSync(file, 'utf8');
+
               if (!txt || txt === 'null') return fallback;
+
               return JSON.parse(txt);
             } catch (err) {
               console.error('JSON read error:', file, err.message);
@@ -72,11 +75,77 @@ jobs:
             }
           }
 
+          function getZonedParts(date, timeZone = APP_TIME_ZONE) {
+            const parts = new Intl.DateTimeFormat('en-CA', {
+              timeZone,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hourCycle: 'h23'
+            }).formatToParts(date);
+
+            return Object.fromEntries(
+              parts
+                .filter(part => part.type !== 'literal')
+                .map(part => [part.type, part.value])
+            );
+          }
+
+          function getTimeZoneOffsetMs(date, timeZone = APP_TIME_ZONE) {
+            const parts = getZonedParts(date, timeZone);
+
+            const asUTC = Date.UTC(
+              Number(parts.year),
+              Number(parts.month) - 1,
+              Number(parts.day),
+              Number(parts.hour),
+              Number(parts.minute),
+              Number(parts.second || 0)
+            );
+
+            return asUTC - date.getTime();
+          }
+
+          function toAppLocalInput(ms) {
+            if (!Number.isFinite(ms) || ms <= 0) return '';
+
+            const parts = getZonedParts(new Date(ms), APP_TIME_ZONE);
+
+            return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+          }
+
+          function parseMs(value) {
+            if (!value) return NaN;
+
+            if (/Z$|[+-]\d{2}:?\d{2}$/.test(value)) {
+              const ms = Date.parse(value);
+              return Number.isFinite(ms) ? ms : NaN;
+            }
+
+            const [datePart, timePart = '00:00'] = String(value).split('T');
+            const [year, month, day] = datePart.split('-').map(Number);
+            const [hour, minute] = timePart.split(':').map(Number);
+
+            if (![year, month, day, hour, minute].every(Number.isFinite)) {
+              return NaN;
+            }
+
+            const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
+            const offset = getTimeZoneOffsetMs(guess, APP_TIME_ZONE);
+
+            return guess.getTime() - offset;
+          }
+
           const last = readJson('/tmp/last.json', { events: [] });
           const next = readJson('/tmp/next.json', { events: [] });
           const state = readJson('/tmp/state.json', {}) || {};
 
-          if (!Array.isArray(state.rounds)) state.rounds = [];
+          if (!Array.isArray(state.rounds)) {
+            state.rounds = [];
+          }
 
           function adapt(e) {
             const homeId = e.homeTeam?.id != null ? String(e.homeTeam.id) : '';
@@ -90,9 +159,9 @@ jobs:
               strHomeTeam: e.homeTeam?.shortName || e.homeTeam?.name || '',
               strAwayTeam: e.awayTeam?.shortName || e.awayTeam?.name || '',
               strLeague: e.tournament?.name || e.season?.tournament?.name || '',
-              dateEvent: startMs ? new Date(startMs).toISOString().substring(0, 10) : '',
-              strTime: startMs ? new Date(startMs).toISOString().substring(11, 19) : '',
-              matchTime: startMs ? new Date(startMs).toISOString() : '',
+              dateEvent: startMs ? toAppLocalInput(startMs).slice(0, 10) : '',
+              strTime: startMs ? toAppLocalInput(startMs).slice(11) : '',
+              matchTime: startMs ? toAppLocalInput(startMs) : '',
               startTimestamp: Number(e.startTimestamp || 0),
               intHomeScore: e.homeScore?.current ?? null,
               intAwayScore: e.awayScore?.current ?? null,
@@ -122,7 +191,9 @@ jobs:
           }
 
           function scoreForCruzeiro(match) {
-            if (match.intHomeScore === null || match.intAwayScore === null) return null;
+            if (match.intHomeScore === null || match.intAwayScore === null) {
+              return null;
+            }
 
             return {
               cruzeiro: isCruzeiroHome(match) ? match.intHomeScore : match.intAwayScore,
@@ -131,14 +202,11 @@ jobs:
           }
 
           function safeId() {
-            if (global.crypto?.randomUUID) return global.crypto.randomUUID();
-            return 'round-' + Date.now() + '-' + Math.random().toString(16).slice(2);
-          }
+            if (global.crypto?.randomUUID) {
+              return global.crypto.randomUUID();
+            }
 
-          function parseMs(value) {
-            if (!value) return NaN;
-            const ms = Date.parse(value);
-            return Number.isFinite(ms) ? ms : NaN;
+            return 'round-' + Date.now() + '-' + Math.random().toString(16).slice(2);
           }
 
           function getRoundNumber(round) {
@@ -165,11 +233,11 @@ jobs:
           function findExistingRound(rounds, match) {
             const externalId = String(match.idEvent);
 
-            let found = rounds.find(round => {
+            const byExternalId = rounds.find(round => {
               return String(round.externalId || round.idEvent || '') === externalId;
             });
 
-            if (found) return found;
+            if (byExternalId) return byExternalId;
 
             const matchMs = parseMs(match.matchTime);
             const opponent = opponentName(match).toLowerCase();
@@ -192,10 +260,12 @@ jobs:
             if (!match.idEvent || !match.matchTime) return false;
 
             let round = findExistingRound(state.rounds, match);
+            const matchMs = parseMs(match.matchTime);
+
+            if (!Number.isFinite(matchMs)) return false;
 
             if (!round) {
               const number = nextRoundNumber(state.rounds);
-              const matchMs = parseMs(match.matchTime);
 
               round = {
                 id: safeId(),
@@ -204,8 +274,8 @@ jobs:
                 opponent: opponentName(match),
                 competition: match.strLeague || 'Jogo do Cruzeiro',
                 matchTime: match.matchTime,
-                autoOpenAt: new Date(matchMs - 12 * 60 * 60 * 1000).toISOString(),
-                deadline: new Date(matchMs - 5 * 60 * 1000).toISOString(),
+                autoOpenAt: toAppLocalInput(matchMs - 12 * 60 * 60 * 1000),
+                deadline: toAppLocalInput(matchMs - 5 * 60 * 1000),
                 resultCruzeiro: null,
                 resultOpponent: null,
                 manualState: 'auto',
@@ -225,15 +295,13 @@ jobs:
               return true;
             }
 
-            const matchMs = parseMs(match.matchTime);
-
             round.externalId = String(match.idEvent);
             round.source = round.source || 'sofascore';
             round.opponent = round.opponent || opponentName(match);
             round.competition = round.competition || match.strLeague || 'Jogo do Cruzeiro';
-            round.matchTime = round.matchTime || match.matchTime;
-            round.autoOpenAt = round.autoOpenAt || new Date(matchMs - 12 * 60 * 60 * 1000).toISOString();
-            round.deadline = round.deadline || new Date(matchMs - 5 * 60 * 1000).toISOString();
+            round.matchTime = match.matchTime;
+            round.autoOpenAt = toAppLocalInput(matchMs - 12 * 60 * 60 * 1000);
+            round.deadline = toAppLocalInput(matchMs - 5 * 60 * 1000);
             round.cruzeiroIsHome = isCruzeiroHome(match);
             round.homeTeam = match.strHomeTeam;
             round.awayTeam = match.strAwayTeam;
@@ -330,14 +398,28 @@ jobs:
 
           echo "State patch: $(cat /tmp/state-patch.json | head -c 500)"
 
-          curl -s -X PATCH \
+          STATE_RESPONSE=$(curl -s -X PATCH \
             -H "Content-Type: application/json" \
             --data-binary @/tmp/state-patch.json \
-            "${FIREBASE_DB_URL}/${BASE_PATH}/state.json?auth=${FIREBASE_SECRET}"
+            "${FIREBASE_DB_URL}/${BASE_PATH}/state.json?auth=${FIREBASE_SECRET}")
 
-          curl -s -X PUT \
+          echo "Firebase state response: $(echo "$STATE_RESPONSE" | head -c 300)"
+
+          MATCHES_RESPONSE=$(curl -s -X PUT \
             -H "Content-Type: application/json" \
             --data-binary @/tmp/matches.json \
-            "${FIREBASE_DB_URL}/${BASE_PATH}/matches.json?auth=${FIREBASE_SECRET}"
+            "${FIREBASE_DB_URL}/${BASE_PATH}/matches.json?auth=${FIREBASE_SECRET}")
+
+          echo "Firebase matches response: $(echo "$MATCHES_RESPONSE" | head -c 300)"
+
+          if echo "$STATE_RESPONSE" | grep -qi '"error"'; then
+            echo "Firebase state update returned error"
+            exit 1
+          fi
+
+          if echo "$MATCHES_RESPONSE" | grep -qi '"error"'; then
+            echo "Firebase matches update returned error"
+            exit 1
+          fi
 
           echo "Done"
