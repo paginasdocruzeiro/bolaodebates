@@ -3518,7 +3518,7 @@ function regenLastRoundHighlight() {
   if (!lastFinalized) return;
   updateRoundHighlight(lastFinalized);
   // Persist correction silently only if text changed (saveState calls Firebase)
-  if (firebaseSyncEnabled && firebaseDbRef) {
+  if (firebaseSyncEnabled && firebaseDbRef && isAdmin()) {
     firebaseDbRef.update({ lastRoundHighlight: state.lastRoundHighlight });
   }
 }
