@@ -1,4 +1,4 @@
-const CACHE = 'bolao-v18';
+const CACHE = 'bolao-v19';
 
 const ASSETS = [
   './',
@@ -71,3 +71,4 @@ self.addEventListener('fetch', e => {
     })
   );
 });
+
