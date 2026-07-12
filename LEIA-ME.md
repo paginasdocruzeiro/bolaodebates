@@ -1,41 +1,27 @@
-# Atualização completa do Bolão do Cruzeiro
+# Redesign visual 2.0
 
-Pacote preparado a partir da versão publicada em 12/07/2026.
+Este pacote parte da versão já publicada com `enhancements.js` e `enhancements.css`.
 
-## Como publicar
-
-No GitHub, substitua os arquivos existentes:
-
-- `app.js`
-- `index.html`
-- `styles.css`
-- `sw.js`
-- `firebase-config.js`
-- `manifest.json`
-
-Crie também estes dois arquivos novos na raiz do repositório:
+## No GitHub, substitua somente
 
 - `enhancements.js`
 - `enhancements.css`
+- `sw.js`
 
-Não é necessário mudar as regras do Firebase para esta atualização. O registro administrativo usa a permissão de administrador já aplicada ao caminho `state`.
+Não altere os outros arquivos e não crie arquivos adicionais.
 
-## Melhorias incluídas
+## Mudanças visuais
 
-- central de notificações e resumo pessoal;
-- conquistas e títulos;
-- perfil completo de cada participante;
-- gráfico de evolução da classificação;
-- simulador de ranking por placar;
-- backup e restauração JSON;
-- registro de alterações administrativas;
-- pré-visualização e confirmação de resultados;
-- participantes ativos/inativos, redefinição de PIN e última aposta;
-- palpites dos outros ocultos até o encerramento;
-- confirmação compartilhável do palpite;
-- tema claro e escuro;
-- melhorias de teclado, contraste, leitor de tela e redução de movimento;
-- aviso de nova versão da PWA;
-- correção da tentativa de gravação automática por visitantes.
+- cartão principal do próximo jogo com escudos grandes e palpite do usuário;
+- controles `−/+` para os placares;
+- pódio visual dos três primeiros;
+- cards de participantes mais destacados;
+- histórico em linha do tempo;
+- top 3 na página pública antes do login;
+- fundo com atmosfera azul e estrelas discretas;
+- indicador de palpite pendente na navegação móvel;
+- animações de placar, navegação e comemoração de acerto exato;
+- estados vazios mais amigáveis;
+- ajustes responsivos para celular e suporte à redução de movimento.
 
-O cache da PWA foi atualizado para `bolao-v20`. Após publicar, usuários com a versão anterior podem precisar atualizar a página uma vez.
+O cache da PWA passa para `bolao-v21`.

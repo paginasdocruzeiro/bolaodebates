@@ -1,4 +1,4 @@
-const CACHE = 'bolao-v20';
+const CACHE = 'bolao-v21';
 
 const ASSETS = [
   './',
@@ -78,4 +78,5 @@ self.addEventListener('fetch', e => {
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
+
 

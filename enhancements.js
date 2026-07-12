@@ -386,23 +386,145 @@
     const originalLoginOptions=renderLoginOptions;
     renderLoginOptions=function enhancedLoginOptions(){ originalLoginOptions(); Array.from(el('loginName')?.options || []).forEach(option => { const user=state.users.find(item=>item.name===option.value); if(user?.active===false) option.remove(); }); };
     const originalHome=renderHome;
-    renderHome=function enhancedHome(){ originalHome(); renderHomeEnhancements(); };
+    renderHome=function enhancedHome(){ originalHome(); renderHomeEnhancements(); renderDesignHome(); renderGuestPreviewV2(); celebrateExactV2(); };
     const originalRanking=renderRanking;
-    renderRanking=function enhancedRanking(){ originalRanking(); renderProfileDirectory(); ensureSimulator(); };
+    renderRanking=function enhancedRanking(){ originalRanking(); renderPodiumV2(); renderProfileDirectory(); ensureSimulator(); };
     const originalHistory=renderHistory;
-    renderHistory=function enhancedHistory(){ originalHistory(); const selected=el('historyPlayerSelect')?.value; if(selected){ const summary=el('historySummary'); summary?.insertAdjacentHTML('beforeend',`<div class="enhancement-section"><button type="button" class="ios-btn ios-btn-blue" data-profile="${esc(selected)}">Ver perfil completo</button>${achievementHTML(selected)}</div>`); } };
+    renderHistory=function enhancedHistory(){ originalHistory(); const selected=el('historyPlayerSelect')?.value; if(selected){ const summary=el('historySummary'); summary?.insertAdjacentHTML('beforeend',`<div class="enhancement-section"><button type="button" class="ios-btn ios-btn-blue" data-profile="${esc(selected)}">Ver perfil completo</button>${achievementHTML(selected)}</div>`); renderTimelineV2(selected); } };
     const originalStats=renderStats;
     renderStats=function enhancedStats(){ originalStats(); requestAnimationFrame(renderEvolutionChart); };
     const originalRound=renderRound;
-    renderRound=function enhancedRound(){ originalRound(); privacyRoundTable(); };
+    renderRound=function enhancedRound(){ originalRound(); privacyRoundTable(); enhanceScoreControls(); updateNavAttention(); };
     const originalAdmin=renderAdmin;
     renderAdmin=function enhancedAdmin(){ originalAdmin(); ensureAdminTools(); renderAdminTools(); renderResultPreview(); };
     const originalUpsert=upsertBet;
     upsertBet=function enhancedUpsert(payload){ const result=originalUpsert(payload); showBetConfirmation(payload); return result; };
   }
 
+
+  function renderDesignHome() {
+    const user = currentUser();
+    const host = user ? el('homeUser') : el('homeGuest');
+    const round = getCurrentRound();
+    if (!host || !round) return;
+    let hero = el('matchHeroV2');
+    if (!hero) {
+      hero = document.createElement('section');
+      hero.id = 'matchHeroV2';
+      hero.className = 'match-hero-v2';
+      host.prepend(hero);
+    }
+    const bet = user ? getBet(round.id, user.name) : null;
+    const status = effectiveRoundState(round);
+    const canBet = user && status === 'open';
+    const scoreCenter = bet
+      ? `<div class="hero-score-v2" aria-label="Seu palpite: Cruzeiro ${bet.cruzeiroGoals} a ${bet.opponentGoals} ${esc(round.opponent)}"><strong>${bet.cruzeiroGoals}</strong><span>×</span><strong>${bet.opponentGoals}</strong><small>seu palpite</small></div>`
+      : '<div class="hero-score-v2 hero-score-empty"><strong>–</strong><span>×</span><strong>–</strong><small>aguardando palpite</small></div>';
+    hero.innerHTML = `<div class="hero-atmosphere" aria-hidden="true">✦ ✧ ✦</div>
+      <div class="hero-meta-v2"><span>${esc(round.competition)}</span><strong>${formatDateTime(round.matchTime)}</strong></div>
+      <div class="hero-matchup-v2">
+        <div class="hero-team-v2"><img src="${getLocalCrest('cruzeiro')}" alt="Escudo do Cruzeiro"><strong>Cruzeiro</strong></div>
+        ${scoreCenter}
+        <div class="hero-team-v2"><img src="${getLocalCrest(round.opponent)}" alt="Escudo do ${esc(round.opponent)}"><strong>${esc(round.opponent)}</strong></div>
+      </div>
+      <div class="hero-actions-v2">
+        <span class="hero-status-v2 ${status}">${roundStateLabel(round)}</span>
+        ${canBet ? '<button type="button" class="hero-cta-v2" data-enh-route="round">Fazer ou alterar palpite</button>' : user ? `<span class="hero-deadline-v2">Fecho: ${formatDateTime(round.deadline)}</span>` : '<span class="hero-deadline-v2">Entre para participar</span>'}
+      </div>`;
+    host.classList.add('has-match-hero-v2');
+    updateNavAttention();
+  }
+
+  function enhanceScoreControls() {
+    ['betCruzeiro','betOpponent'].forEach(id => {
+      const input = el(id);
+      if (!input || input.closest('.score-stepper-v2')) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'score-stepper-v2';
+      input.parentNode.insertBefore(wrapper, input);
+      const minus = document.createElement('button');
+      minus.type='button'; minus.className='score-step-v2'; minus.textContent='−'; minus.setAttribute('aria-label','Diminuir placar');
+      const plus = document.createElement('button');
+      plus.type='button'; plus.className='score-step-v2'; plus.textContent='+'; plus.setAttribute('aria-label','Aumentar placar');
+      wrapper.append(minus,input,plus);
+      const change = delta => {
+        const current = Number(input.value || 0);
+        input.value = String(Math.max(0,Math.min(20,current+delta)));
+        input.classList.remove('score-pop-v2'); void input.offsetWidth; input.classList.add('score-pop-v2');
+        input.dispatchEvent(new Event('input',{bubbles:true}));
+        if (navigator.vibrate) navigator.vibrate(18);
+      };
+      minus.addEventListener('click',()=>change(-1)); plus.addEventListener('click',()=>change(1));
+    });
+  }
+
+  function renderPodiumV2() {
+    const ranking = calculateRankings();
+    const host = el('tab-ranking');
+    if (!host || !ranking.length) return;
+    let podium = el('podiumV2');
+    if (!podium) {
+      podium = document.createElement('section');
+      podium.id = 'podiumV2';
+      podium.className = 'podium-v2';
+      host.prepend(podium);
+    }
+    const first=ranking[0], second=ranking[1], third=ranking[2];
+    const card = (item,place,medal) => item ? `<button type="button" class="podium-place-v2 podium-${place}" data-profile="${esc(item.name)}"><span class="podium-medal-v2">${medal}</span><span class="avatar-v2">${esc(item.name.charAt(0))}</span><strong>${esc(item.name)}</strong><b>${item.totalPoints} pts</b><small>${item.exact} exato${item.exact!==1?'s':''}</small><span class="podium-block-v2">${place}º</span></button>` : '';
+    podium.innerHTML = `<div class="podium-heading-v2"><div><span class="mini-label">Disputa pelo topo</span><h3>Pódio geral</h3></div><span class="podium-season-v2">Temporada 2026</span></div><div class="podium-stage-v2">${card(second,2,'🥈')}${card(first,1,'🥇')}${card(third,3,'🥉')}</div>`;
+  }
+
+  function renderTimelineV2(name) {
+    const history = getUserHistory(name);
+    const host = el('historyTableWrap')?.parentElement;
+    if (!host) return;
+    let timeline = el('historyTimelineV2');
+    if (!timeline) {
+      timeline=document.createElement('section');
+      timeline.id='historyTimelineV2';
+      timeline.className='timeline-v2';
+      host.insertBefore(timeline,el('historyTableWrap'));
+    }
+    const entries=history.filter(item=>item.resultLabel!=='A definir').slice(-8).reverse();
+    timeline.innerHTML = `<div class="timeline-title-v2"><span class="mini-label">Trajetória recente</span><h3>Linha do tempo</h3></div>${entries.length ? entries.map(item=>`<article class="timeline-item-v2 timeline-${esc(item.type)}"><span class="timeline-dot-v2"></span><div><strong>${esc(item.title)} · Cruzeiro x ${esc(item.opponent)}</strong><p>${esc(item.betLabel)} → ${esc(item.resultLabel)}</p></div><b>${esc(item.pointsLabel)}</b></article>`).join('') : '<div class="empty-state-v2"><span>⚽</span><strong>A bola ainda não rolou</strong><p>As rodadas finalizadas aparecerão aqui.</p></div>'}`;
+  }
+
+  function renderGuestPreviewV2() {
+    if (currentUser()) return;
+    const host=el('homeGuest');
+    if(!host) return;
+    let preview=el('guestTop3V2');
+    if(!preview){ preview=document.createElement('div'); preview.id='guestTop3V2'; preview.className='guest-preview-v2'; host.appendChild(preview); }
+    const top=calculateRankings().slice(0,3);
+    preview.innerHTML=`<span class="mini-label">Classificação atual</span><h3>Quem está no topo</h3><div class="guest-top3-v2">${top.map((item,index)=>`<div><span>${['🥇','🥈','🥉'][index]}</span><strong>${esc(item.name)}</strong><b>${item.totalPoints} pts</b></div>`).join('')}</div>`;
+  }
+
+  function updateNavAttention() {
+    const user=currentUser(), round=getCurrentRound();
+    const item=document.querySelector('.bottom-nav-item[data-route="round"]');
+    if(!item) return;
+    const missing=!!(user&&round&&effectiveRoundState(round)==='open'&&!getBet(round.id,user.name));
+    item.classList.toggle('needs-attention-v2',missing);
+    item.setAttribute('aria-label',missing?'Rodada — palpite pendente':'Rodada');
+  }
+
+  function celebrateExactV2() {
+    const user=currentUser(); if(!user) return;
+    const last=finishedRounds().at(-1); if(!last) return;
+    const bet=getBet(last.id,user.name); if(!bet) return;
+    const result=scorePrediction(bet.cruzeiroGoals,bet.opponentGoals,last.resultCruzeiro,last.resultOpponent);
+    const key=`exact-celebrated:${last.id}:${user.name}`;
+    if(result.type!=='exato'||sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key,'1');
+    const layer=document.createElement('div'); layer.className='confetti-v2'; layer.setAttribute('aria-hidden','true');
+    const colors=['#60a5fa','#d7b86b','#ffffff','#2563eb'];
+    for(let i=0;i<28;i++){const bit=document.createElement('i');bit.style.left=`${Math.random()*100}%`;bit.style.background=colors[i%colors.length];bit.style.animationDelay=`${Math.random()*.5}s`;bit.style.transform=`rotate(${Math.random()*180}deg)`;layer.appendChild(bit);}
+    document.body.appendChild(layer); setTimeout(()=>layer.remove(),2600);
+    showToast('🎯 Placar exato! Você cravou!');
+  }
+
   function initEnhancements() {
-    ensureDom(); applyTheme(); wrapCore(); wireEvents(); installUpdatePrompt();
+    ensureDom(); applyTheme(); wrapCore(); wireEvents(); installUpdatePrompt(); enhanceScoreControls();
     renderAll(currentRoute || (currentUser() ? 'round' : 'home'));
     console.info(`[Bolão] Melhorias ${ENHANCEMENT_VERSION} carregadas.`);
   }
@@ -410,3 +532,4 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',initEnhancements,{once:true});
   else initEnhancements();
 })();
+
