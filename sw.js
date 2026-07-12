@@ -1,4 +1,4 @@
-const CACHE = 'bolao-v21';
+const CACHE = 'bolao-v22';
 
 const ASSETS = [
   './',
@@ -7,6 +7,7 @@ const ASSETS = [
   './app.js',
   './enhancements.js',
   './enhancements.css',
+  './fundo-estrelas.png',
   './firebase-config.js',
   './Bolao1.png',
   './manifest.json'
@@ -78,5 +79,6 @@ self.addEventListener('fetch', e => {
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
+
 
 

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const ENHANCEMENT_VERSION = '2026.07.12';
+  const ENHANCEMENT_VERSION = '2026.07.12-layout-v3';
   const AUDIT_KEY = 'bolaoCruzeiroDebates.audit.v1';
   const THEME_KEY = 'bolaoCruzeiroDebates.theme';
   const BACKUP_KEY = 'bolaoCruzeiroDebates.lastBackup';
@@ -532,4 +532,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',initEnhancements,{once:true});
   else initEnhancements();
 })();
+
 

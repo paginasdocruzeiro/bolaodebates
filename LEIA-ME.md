@@ -1,27 +1,28 @@
-# Redesign visual 2.0
+# Ajuste de layout e fundo de estrelas
 
-Este pacote parte da versão já publicada com `enhancements.js` e `enhancements.css`.
+## No GitHub
 
-## No GitHub, substitua somente
+Substitua:
 
-- `enhancements.js`
 - `enhancements.css`
+- `enhancements.js`
 - `sw.js`
 
-Não altere os outros arquivos e não crie arquivos adicionais.
+Crie na raiz do repositório:
 
-## Mudanças visuais
+- `fundo-estrelas.png`
 
-- cartão principal do próximo jogo com escudos grandes e palpite do usuário;
-- controles `−/+` para os placares;
-- pódio visual dos três primeiros;
-- cards de participantes mais destacados;
-- histórico em linha do tempo;
-- top 3 na página pública antes do login;
-- fundo com atmosfera azul e estrelas discretas;
-- indicador de palpite pendente na navegação móvel;
-- animações de placar, navegação e comemoração de acerto exato;
-- estados vazios mais amigáveis;
-- ajustes responsivos para celular e suporte à redução de movimento.
+Use exatamente esse nome, incluindo letras minúsculas e hífen.
 
-O cache da PWA passa para `bolao-v21`.
+## O que mudou
+
+- imagem das cinco estrelas aplicada ao fundo com sobreposição para manter contraste;
+- fundo também integrado ao cartão do próximo jogo;
+- largura e centralização geral revisadas;
+- cabeçalho, barra lateral e conteúdo alinhados;
+- cartões e painéis com espaçamento consistente;
+- página inicial reorganizada;
+- pódio, perfis, tabelas, estatísticas e histórico reposicionados;
+- formulários e painel administrativo ajustados;
+- comportamento responsivo refinado para tablet e celular;
+- cache PWA atualizado para `bolao-v22`.
