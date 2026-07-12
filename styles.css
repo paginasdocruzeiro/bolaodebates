@@ -461,30 +461,6 @@ tbody tr:hover            { background: rgba(96,165,250,.07); transition: backgr
 .btn-warning { background: linear-gradient(180deg, #f59e0b, #d97706); color: #1a1000; }
 .btn-success { background: linear-gradient(180deg, #10b981, #059669); }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-@keyframes pulse-text {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-.ai-spinner {
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(96,165,250,0.25);
-  border-top-color: var(--accent-soft);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  vertical-align: middle;
-  margin-right: 8px;
-}
-.ai-loading-text {
-  animation: pulse-text 1.4s ease-in-out infinite;
-  color: var(--accent-soft);
-  font-size: .92rem;
-}
-
 select option {
   color: #16335f;
   background: #f3f6fc;
@@ -991,3 +967,4 @@ td:has(.avatar-initial) { white-space: nowrap; }
   color: var(--green);
   font-weight: 700;
 }
+
