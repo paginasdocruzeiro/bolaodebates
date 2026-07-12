@@ -21,7 +21,6 @@ const views = ['home', 'round', 'ranking', 'history', 'admin', 'print'];
 let currentRoute = 'home';
 let firebaseDbRef = null;
 let firebaseSyncEnabled = false;
-let geminiKey = null;
 
 let privatePhones = {};
 let privatePhonesLoaded = false;
@@ -1207,43 +1206,6 @@ function getStatsSummary() {
 }
 
 
-// ── IA do Bolão ──────────────────────────────────────────────
-
-function showAiActions(text, isWhatsApp = false) {
-  const copyBtn = el('aiCopyBtn');
-  const waBtn = el('aiSendWhatsBtn');
-  const emptyMsg = el('aiOutputEmpty');
-  if (emptyMsg) emptyMsg.classList.add('hidden');
-  if (copyBtn) {
-    copyBtn.classList.remove('hidden');
-    copyBtn.onclick = async () => {
-      await navigator.clipboard.writeText(text);
-      showToast('Copiado!');
-    };
-  }
-  if (waBtn) {
-    waBtn.classList.toggle('hidden', !isWhatsApp);
-    waBtn.onclick = () => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-  }
-}
-
-async function loadGeminiKey() {
-  if (geminiKey) return geminiKey;
-  if (window.BOLAO_GEMINI_KEY && window.BOLAO_GEMINI_KEY !== 'SUBSTITUA_PELA_SUA_KEY_AQUI') {
-    geminiKey = window.BOLAO_GEMINI_KEY;
-    return geminiKey;
-  }
-  if (!firebaseDbRef) return null;
-  try {
-    const db = firebase.database();
-    const snap = await db.ref('bolao-cruzeiro-debates/state/geminiKey').once('value');
-    geminiKey = snap.val() || null;
-    return geminiKey;
-  } catch {
-    return null;
-  }
-}
-
 // ── Football Data API ─────────────────────────────────────────
 
 // ── Escudos dos clubes ────────────────────────────────────────────
@@ -1423,168 +1385,6 @@ async function getCruzeiroContext() {
   return { recentResults, formData };
 }
 
-async function callGemini(prompt) {
-  const key = await loadGeminiKey();
-  if (!key) throw new Error('Chave Gemini não disponível. Certifica-te que estás logado como admin.');
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${key}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.9, maxOutputTokens: 800 }
-      })
-    }
-  );
-
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err?.error?.message || 'Erro na API Gemini.');
-  }
-
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta.';
-}
-
-async function aiAnalyzeRound() {
-  const btn = el('aiAnalyzeBtn');
-  const out = el('aiOutput');
-
-  // Usa a última rodada com resultado lançado (finalizada ou com resultado)
-  const round = [...state.rounds]
-    .filter(r => r.resultCruzeiro !== null && r.resultOpponent !== null)
-    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0];
-
-  if (!round) {
-    out.textContent = 'Nenhuma rodada com resultado lançado ainda.';
-    out.classList.remove('hidden');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="ai-spinner"></span> A analisar...';
-  out.classList.remove('hidden');
-  out.innerHTML = '<span class="ai-loading-text">⚽ A buscar dados e a gerar análise...</span>';
-
-  const roundRanking = getRoundRanking(round);
-  const ranking = calculateRankings();
-  const footballCtx = await getCruzeiroContext();
-
-  const exactos = roundRanking.filter(r => r.type === 'exato').map(r => r.name);
-  const zeros = roundRanking.filter(r => r.points === 0).map(r => r.name);
-
-  const prompt = `Você é o narrador oficial do Bolão Cruzeiro Debates — grupo de amigos apaixonados pelo Cruzeiro. Escreva um comentário pós-jogo APENAS com os dados abaixo. PROIBIDO inventar informações, jogadores, lances ou factos que não constes nos dados fornecidos. Use os nomes reais dos apostadores, provoque quem errou, elogie quem acertou. Português do Brasil, gírias de futebol, emojis, máximo 4 parágrafos.
-
-RESULTADO DO BOLÃO:
-Jogo: Cruzeiro ${round.resultCruzeiro}x${round.resultOpponent} ${round.opponent} — ${round.competition}
-Acertou placar EXATO: ${exactos.length ? exactos.join(', ') : 'ninguém'}
-Não pontuou nada: ${zeros.length ? zeros.join(', ') : 'ninguém'}
-Apostas: ${roundRanking.map(r => `${r.name} apostou ${r.bet} → ${r.points}pt (${r.type})`).join('; ')}
-Top 3 ranking: ${ranking.slice(0, 3).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(', ')}
-${footballCtx?.recentResults ? `
-FORMA RECENTE DO CRUZEIRO (dados reais): ${footballCtx.recentResults}` : ''}
-${footballCtx?.formData ? `Forma: ${footballCtx.formData}` : ''}`;
-
-  try {
-    const text = await callGemini(prompt);
-    out.textContent = text;
-    showAiActions(text);
-  } catch (e) {
-    out.textContent = `Erro: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🏆 Analisar rodada atual';
-  }
-}
-
-async function aiPredictMatch() {
-  const btn = el('aiPredictBtn');
-  const out = el('aiOutput');
-
-  // Usa apenas rodada em aberto ou em espera — nunca uma já finalizada
-  const sorted = [...state.rounds]
-    .sort((a, b) => parseAppDateTime(a.matchTime) - parseAppDateTime(b.matchTime));
-  const round = sorted.find(r => ['open', 'upcoming'].includes(effectiveRoundState(r)));
-
-  if (!round) {
-    out.textContent = 'Sem rodada aberta ou em espera para prever. Aguarda a próxima rodada ser criada.';
-    out.classList.remove('hidden');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="ai-spinner"></span> A prever...';
-  out.classList.remove('hidden');
-  out.innerHTML = '<span class="ai-loading-text">🔮 A analisar histórico e gerar previsão...</span>';
-
-  const ranking = calculateRankings();
-  const footballCtx = await getCruzeiroContext();
-  const allHistory = ranking.map(u => {
-    const h = getUserHistory(u.name).filter(x => x.betLabel !== '-' && x.betLabel !== 'Sem palpite');
-    const resumo = h.slice(-5).map(x => `apostou ${x.betLabel} (resultado ${x.resultLabel}, ${x.pointsLabel})`).join('; ');
-    return `${u.name}: ${resumo || 'sem apostas ainda'}`;
-  });
-
-  const prompt = `Você é o Oráculo do Bolão Cruzeiro Debates. Faça uma previsão para Cruzeiro x ${round.opponent} (${round.competition}) usando APENAS os dados abaixo. PROIBIDO inventar estatísticas, jogadores ou informações que não constem nos dados. Base a previsão no histórico real de apostas de cada jogador. Português do Brasil, divertido, emojis, máximo 4 parágrafos.
-
-PRÓXIMO JOGO: Cruzeiro x ${round.opponent} — ${round.competition}
-${footballCtx?.recentResults ? `FORMA RECENTE DO CRUZEIRO (dados reais da API): ${footballCtx.recentResults}` : 'NOTA: dados de forma do Cruzeiro indisponíveis agora.'}
-${footballCtx?.formData ? `Sequência de resultados: ${footballCtx.formData}` : ''}
-
-HISTÓRICO DE APOSTAS DOS PARTICIPANTES:
-${allHistory.join('\n')}
-RANKING: ${ranking.slice(0, 5).map(r => `${r.position}º ${r.name} ${r.totalPoints}pts`).join(' | ')}`;
-
-  try {
-    const text = await callGemini(prompt);
-    out.textContent = text;
-    showAiActions(text, false);
-  } catch (e) {
-    out.textContent = `Erro: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🔮 Gerar previsão';
-  }
-}
-
-async function aiGenerateWhatsApp() {
-  const btn = el('aiWhatsBtn');
-  const out = el('aiOutput');
-  const round = getCurrentRound();
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="ai-spinner"></span> A criar mensagem...';
-  out.classList.remove('hidden');
-  out.innerHTML = '<span class="ai-loading-text">📲 A preparar mensagem para o grupo...</span>';
-
-  const ranking = calculateRankings();
-  const roundRanking = getRoundRanking(round);
-
-  const lider = ranking[0];
-  const lanterna = ranking[ranking.length - 1];
-  const prompt = `Crie uma mensagem para o grupo de WhatsApp do Bolão Cruzeiro Debates. Escreva em português do Brasil, estilo animado de grupo de amigos. Use os nomes reais. Provoque o último colocado pelo nome com bom humor, elogie o líder. Inclua o ranking completo formatado para WhatsApp. Use emojis 💙⚽🏆🔥. Máximo 20 linhas.
-
-RANKING COMPLETO: ${ranking.map(r => `${r.position}º ${r.name} — ${r.totalPoints} pts (${r.exact} exatos)`).join(' | ')}
-LÍDER: ${lider?.name} com ${lider?.totalPoints} pontos
-LANTERNA: ${lanterna?.name} com ${lanterna?.totalPoints} pontos
-${round ? `PRÓXIMO JOGO: Cruzeiro x ${round.opponent} — ${round.competition}` : ''}
-${roundRanking.length ? `DESTAQUE DA ÚLTIMA RODADA: ${roundRanking[0]?.name} com ${roundRanking[0]?.points} ponto${roundRanking[0]?.points !== 1 ? 's' : ''}` : ''}`;
-
-  try {
-    const text = await callGemini(prompt);
-    out.textContent = text;
-    showAiActions(text, true);
-    const waMsgEl = el('whatsMessage');
-    if (waMsgEl) waMsgEl.value = text;
-  } catch (e) {
-    out.textContent = `Erro: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '📲 Gerar mensagem';
-  }
-}
 function movementHTML(movement, delta) {
   if (movement === 'up') return `<span class="movement up">↑ ${Math.abs(delta)}</span>`;
   if (movement === 'down') return `<span class="movement down">↓ ${Math.abs(delta)}</span>`;
@@ -3258,24 +3058,91 @@ function renderPrint(type = 'ranking') {
     `;
 }
 
-function generateWhatsAppMessage() {
-  const ranking = calculateRankings().slice(0, 5);
-  const round = getCurrentRound();
-  const roundRanking = getRoundRanking(round);
+function pickLocalMessage(options, seed = '') {
+  if (!options.length) return '';
+  const hash = Array.from(String(seed)).reduce((total, char) => ((total * 31) + char.charCodeAt(0)) >>> 0, 0);
+  return options[hash % options.length];
+}
 
-  const highlight = roundRanking[0]
-    ? `🔥 Destaque: ${roundRanking[0].name}${roundRanking[0].type === 'exato' ? ' (placar exato)' : ''}`
-    : `🔥 Destaque: ${state.lastRoundHighlight.player}`;
+function generateWhatsAppMessage() {
+  const ranking = calculateRankings();
+  const round = getCurrentRound();
+  const latestFinished = [...state.rounds]
+    .filter(item => item.resultCruzeiro !== null && item.resultOpponent !== null)
+    .sort((a, b) => parseAppDateTime(b.matchTime) - parseAppDateTime(a.matchTime))[0] || null;
+  const latestRanking = latestFinished ? getRoundRanking(latestFinished) : [];
+  const leader = ranking[0];
+  const last = ranking[ranking.length - 1];
+  const winners = latestRanking.filter(item => item.points === latestRanking[0]?.points && item.points > 0);
+  const exact = latestRanking.filter(item => item.type === 'exato');
+  const missing = round && effectiveRoundState(round) === 'open' ? getMissingBettors(round) : [];
+  const seed = `${latestFinished?.id || ''}:${round?.id || ''}:${leader?.name || ''}`;
+
+  const opening = pickLocalMessage([
+    '💙 A resenha está oficialmente aberta!',
+    '⚽ Saiu o boletim do Bolão Cruzeiro Debates!',
+    '🔥 Atualização fresquinha do nosso bolão!',
+    '🏆 Hora de conferir como está a disputa!'
+  ], seed);
+
+  const leaderLine = leader
+    ? pickLocalMessage([
+        `👑 ${leader.name} segue na liderança com ${leader.totalPoints} pontos.`,
+        `🚀 ${leader.name} está no topo com ${leader.totalPoints} pontos.`,
+        `🥇 Quem manda na tabela agora é ${leader.name}, com ${leader.totalPoints} pontos.`
+      ], seed + ':leader')
+    : '';
+
+  const highlightLine = exact.length
+    ? `🎯 Placar exato na última rodada: ${formatNames(exact.map(item => item.name))}!`
+    : winners.length
+      ? `⭐ Destaque da última rodada: ${formatNames(winners.map(item => item.name))}, com ${winners[0].points} ponto${winners[0].points !== 1 ? 's' : ''}.`
+      : latestFinished
+        ? '😅 Na última rodada ninguém pontuou. A bola pune!'
+        : '';
+
+  const friendlyTease = last && ranking.length > 1
+    ? pickLocalMessage([
+        `😄 ${last.name} fecha a fila por enquanto, mas ainda dá para buscar!`,
+        `🫣 ${last.name} está segurando a lanterna — reação já!`,
+        `📣 Alô, ${last.name}: o campeonato ainda não acabou!`
+      ], seed + ':last')
+    : '';
+
+  const nextMatch = round
+    ? `⚽ Próximo jogo: Cruzeiro x ${round.opponent} — ${round.competition}\n🕒 ${formatDateTime(round.matchTime)}`
+    : '';
+
+  const deadline = round && effectiveRoundState(round) === 'open'
+    ? `⏳ Palpites até ${formatDateTime(round.deadline)}.`
+    : '';
+
+  const missingLine = missing.length
+    ? `⚠️ Ainda faltam: ${formatNames(missing.map(user => user.name))}.`
+    : round && effectiveRoundState(round) === 'open'
+      ? '✅ Todo mundo já mandou o palpite.'
+      : '';
 
   return [
-    '🏆 Bolão Cruzeiro Debates',
+    '🏆 *Bolão Cruzeiro Debates*',
+    opening,
     '',
-    '📊 Ranking atualizado:',
-    ...ranking.map(item => `${item.position}º ${item.name} - ${item.totalPoints} pts`),
+    leaderLine,
+    highlightLine,
+    friendlyTease,
     '',
-    highlight,
+    '📊 *Ranking:*',
+    ...ranking.map(item => `${item.position}º ${item.name} — ${item.totalPoints} pts`),
     '',
-    round ? `⚽ Próximo jogo: Cruzeiro x ${round.opponent}, ${round.competition}` : ''
+    nextMatch,
+    deadline,
+    missingLine,
+    '',
+    pickLocalMessage([
+      '💙 Bora, Cruzeiro!',
+      '💙 Que venha mais uma vitória da Raposa!',
+      '🦊 Valendo a honra e a resenha do grupo!'
+    ], seed + ':close')
   ].filter(Boolean).join('\n');
 }
 
@@ -3628,11 +3495,6 @@ function setupEvents() {
   el('chatInputAdmin')?.addEventListener('keydown', e => { if (e.key === 'Enter') sendChatMessage('chatInputAdmin', true); });
 
   // Chat iniciado ao carregar home se utilizador estiver logado
-
-
-  el('aiAnalyzeBtn')?.addEventListener('click', aiAnalyzeRound);
-  el('aiPredictBtn')?.addEventListener('click', aiPredictMatch);
-  el('aiWhatsBtn')?.addEventListener('click', aiGenerateWhatsApp);
 }
 
 async function init() {
@@ -4316,3 +4178,4 @@ if ('serviceWorker' in navigator) {
       .catch(err => console.warn('SW registration failed:', err));
   });
 }
+
