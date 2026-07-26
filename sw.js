@@ -1,4 +1,4 @@
-const CACHE = 'bolao-v23-rodadas-fix';
+const CACHE = 'bolao-v24-sw-clone-fix';
 
 const ASSETS = [
   './',
@@ -14,24 +14,34 @@ const ASSETS = [
   './manifest.json'
 ];
 
-self.addEventListener('install', e => {
-  e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+self.addEventListener('install', event => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then(cache => cache.addAll(ASSETS))
+      .then(() => self.skipWaiting())
   );
 });
 
-self.addEventListener('activate', e => {
-  e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+self.addEventListener('activate', event => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then(keys => Promise.all(
+        keys
+          .filter(key => key !== CACHE)
+          .map(key => caches.delete(key))
+      ))
       .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
 
   if (!['http:', 'https:'].includes(url.protocol)) return;
+  if (request.method !== 'GET') return;
 
   const alwaysNetwork = [
     'firebasedatabase.app',
@@ -43,43 +53,86 @@ self.addEventListener('fetch', e => {
     'cdn.jsdelivr.net'
   ];
 
-  if (alwaysNetwork.some(d => url.hostname.includes(d) || url.href.includes(d))) return;
-
-  // Arquivos de lógica: rede primeiro para evitar executar uma versão antiga.
-  if (
-    url.origin === self.location.origin &&
-    ['/app.js', '/firebase-config.js', '/hotfix-rodadas.js', '/sw.js'].some(path => url.pathname.endsWith(path))
-  ) {
-    e.respondWith(
-      fetch(e.request)
-        .then(res => {
-          if (res.ok && e.request.method === 'GET') {
-            caches.open(CACHE).then(cache => cache.put(e.request, res.clone()));
-          }
-          return res;
-        })
-        .catch(() => caches.match(e.request))
-    );
+  // Firebase, autenticação e APIs seguem diretamente para a rede.
+  if (alwaysNetwork.some(domain =>
+    url.hostname.includes(domain) || url.href.includes(domain)
+  )) {
     return;
   }
 
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
+  const logicFiles = [
+    '/app.js',
+    '/firebase-config.js',
+    '/hotfix-rodadas.js',
+    '/sw.js'
+  ];
 
-      return fetch(e.request).then(res => {
-        if (res.ok && e.request.method === 'GET' && url.origin === self.location.origin) {
-          caches.open(CACHE).then(cache => cache.put(e.request, res.clone()));
+  // Arquivos de lógica: rede primeiro, cache como fallback.
+  if (
+    url.origin === self.location.origin &&
+    logicFiles.some(path => url.pathname.endsWith(path))
+  ) {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(request);
+
+        if (response.ok) {
+          // A cópia precisa ser criada antes de o corpo da resposta ser consumido.
+          const responseForCache = response.clone();
+          const cache = await caches.open(CACHE);
+          await cache.put(request, responseForCache);
         }
-        return res;
-      }).catch(() => {
-        if (e.request.mode === 'navigate') return caches.match('./index.html');
-        return new Response('', { status: 404, statusText: 'Not Found' });
+
+        return response;
+      } catch (error) {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+
+        return new Response('', {
+          status: 503,
+          statusText: 'Offline'
+        });
+      }
+    })());
+
+    return;
+  }
+
+  // Demais arquivos: cache primeiro, rede como fallback.
+  event.respondWith((async () => {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+
+    try {
+      const response = await fetch(request);
+
+      if (
+        response.ok &&
+        url.origin === self.location.origin
+      ) {
+        // Clona imediatamente, antes de devolver a resposta ao navegador.
+        const responseForCache = response.clone();
+        const cache = await caches.open(CACHE);
+        await cache.put(request, responseForCache);
+      }
+
+      return response;
+    } catch (error) {
+      if (request.mode === 'navigate') {
+        const fallback = await caches.match('./index.html');
+        if (fallback) return fallback;
+      }
+
+      return new Response('', {
+        status: 404,
+        statusText: 'Not Found'
       });
-    })
-  );
+    }
+  })());
 });
 
 self.addEventListener('message', event => {
-  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
