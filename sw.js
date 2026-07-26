@@ -1,10 +1,11 @@
-const CACHE = 'bolao-v22';
+const CACHE = 'bolao-v23-rodadas-fix';
 
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './hotfix-rodadas.js',
   './enhancements.js',
   './enhancements.css',
   './fundo-estrelas.png',
@@ -44,11 +45,15 @@ self.addEventListener('fetch', e => {
 
   if (alwaysNetwork.some(d => url.hostname.includes(d) || url.href.includes(d))) return;
 
-  if (url.origin === self.location.origin && url.pathname.endsWith('/app.js')) {
+  // Arquivos de lógica: rede primeiro para evitar executar uma versão antiga.
+  if (
+    url.origin === self.location.origin &&
+    ['/app.js', '/firebase-config.js', '/hotfix-rodadas.js', '/sw.js'].some(path => url.pathname.endsWith(path))
+  ) {
     e.respondWith(
       fetch(e.request)
         .then(res => {
-          if (res.ok) {
+          if (res.ok && e.request.method === 'GET') {
             caches.open(CACHE).then(cache => cache.put(e.request, res.clone()));
           }
           return res;
@@ -75,10 +80,6 @@ self.addEventListener('fetch', e => {
   );
 });
 
-
 self.addEventListener('message', event => {
   if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
-
-
-
